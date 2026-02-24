@@ -23,6 +23,8 @@
 @property(nonatomic, assign) BOOL hasMultiplePages;
 @property(nonatomic, assign) BOOL rulerIsBeingDisplayed;
 @property(nonatomic, assign) BOOL isSettingSize;
+@property(nonatomic, assign) BOOL pageUpdateDeferred;
+@property(nonatomic, assign) NSInteger addingPageCount;
 @end
 
 @interface DocumentWindowController (Private)
@@ -43,6 +45,10 @@
 
 - (void)addPage;
 - (void)removePage;
+- (void)_syncPages;
+- (void)_handleLayoutForContainer:(NSTextContainer *)textContainer
+                            atEnd:(BOOL)layoutFinishedFlag
+                    layoutManager:(NSLayoutManager *)layoutManager;
 
 - (NSTextView *)firstTextView;
 
@@ -623,38 +629,40 @@
     [pagesView scrollRectToVisible:visibleRect];
   }
 
-  // Temporarily add the container to the layout manager (with delegate
-  // suppressed) so that initWithFrame:textContainer: can find existing text
-  // views through the layout manager and inherit their NSTextViewSharedData
-  // (delegate, ruler support, font panel, undo, etc.). Without this, each text
-  // view creates its own shared data, and the old shared data can be freed
-  // under ARC, causing crashes in ruler and context menu code that reference
-  // it.
-  id savedDelegate = [[self layoutManager] delegate];
-  [[self layoutManager] setDelegate:nil];
+  // Add container to the layout manager FIRST so that initWithFrame:textContainer:
+  // finds sibling text views and inherits their NSTextViewSharedData (delegate,
+  // ruler support, font panel, undo, spell checking, NSTextFinder, etc.).
+  // This is critical under ARC: if each text view creates its own shared data,
+  // the old shared data may be freed when pages are removed, crashing internal
+  // AppKit code that still references it.
+  //
+  // Guard against the delegate's remove-page path: during addTextContainer:,
+  // the layout manager may fire the delegate with "layout finished, all fit"
+  // if the new container is empty (e.g., during the initial switch to multi-page
+  // mode when the old single-page container still holds all the text).  Without
+  // this guard, the delegate would immediately remove the page we're setting up.
+  // The add-page path is NOT guarded, so the normal cascade works.
+  _addingPageCount++;
   [[self layoutManager] addTextContainer:textContainer];
 
+  // Create text view AFTER addTextContainer: — the container is in the layout
+  // manager, so initWithFrame:textContainer: finds sibling text views and
+  // shares their NSTextViewSharedData.
   textView = [[NSTextView alloc] initWithFrame:[pagesView documentRectForPageNumber:numberOfPages]
                                  textContainer:textContainer];
 
-  // Now remove the container and restore the delegate. We will re-add the
-  // container at the end (its original position) so that addTextContainer:
-  // triggers layout with the delegate active, allowing the normal page creation
-  // cascade to work.
-  [[self layoutManager] removeTextContainerAtIndex:[[self layoutManager] textContainers].count - 1];
-  [[self layoutManager] setDelegate:savedDelegate];
-
-  [textView setLayoutOrientation:orientation];
   [textView setHorizontallyResizable:NO];
   [textView setVerticallyResizable:NO];
+  [textView setLayoutOrientation:orientation];
 
   if (NSTextLayoutOrientationVertical == orientation) {     // Adjust the initial container size
     textSize = NSMakeSize(textSize.height, textSize.width); // Translate size
     [textContainer setContainerSize:textSize];
   }
+
   [self configureTypingAttributesAndDefaultParagraphStyleForTextView:textView];
   [pagesView addSubview:textView];
-  [[self layoutManager] addTextContainer:textContainer];
+  _addingPageCount--;
 }
 
 - (void)removePage {
@@ -663,8 +671,24 @@
   NSTextContainer *lastContainer = [textContainers objectAtIndex:[textContainers count] - 1];
   MultiplePageView *pagesView = [_scrollView documentView];
 
+  // Keep a strong reference to the text view so it stays alive through the
+  // removeTextContainerAtIndex: call.  That call triggers _fixSharedData /
+  // resetStateForTextView: which accesses NSTextFinder's client (the text
+  // view).  Without this, removeFromSuperview releases the last strong
+  // reference and the text view is freed before the container removal.
+  NSTextView *textView = [lastContainer textView];
+
+  // If this text view is the window's first responder, resign it before
+  // removal.  removeFromSuperview does not always clear the first responder
+  // (especially on non-key windows), leaving a dangling pointer that
+  // crashes when the window later becomes key and calls acquireKeyFocus.
+  NSWindow *window = [textView window];
+  if (window && [window firstResponder] == textView) {
+    [window makeFirstResponder:[self firstTextView]];
+  }
+
   [pagesView setNumberOfPages:numberOfPages - 1];
-  [[lastContainer textView] removeFromSuperview];
+  [textView removeFromSuperview];
   [[lastContainer layoutManager] removeTextContainerAtIndex:[textContainers count] - 1];
 }
 
@@ -683,6 +707,15 @@
 
   [[self firstTextView] removeObserver:self forKeyPath:@"backgroundColor"];
   [[self firstTextView] unbind:@"editable"];
+
+  // Clear the first responder before swapping text views.  The old text view
+  // will be deallocated when its local strong reference goes out of scope,
+  // but makeFirstResponder: for the new text view doesn't happen until the
+  // end of this method.  Without this, the window holds a dangling first
+  // responder pointer that crashes in becomeKeyWindow → acquireKeyFocus
+  // (e.g., when the menu bar returns key status to the window after the
+  // Format → Wrap to Page action completes).
+  [[_scrollView window] makeFirstResponder:nil];
 
   if ([self firstTextView]) {
     orientation = [[self firstTextView] layoutOrientation];
@@ -788,11 +821,11 @@
       setHasHorizontalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? YES : NO)];
   [_scrollView setHasVerticalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? NO : YES)];
 
-  // Under ARC, NSTextViewSharedData is not reliably inherited by new text views
-  // created during page mode transitions (the old text view's shared data may
-  // be released before the new text view adopts it). Re-establish shared state
-  // on the new first text view to ensure the delegate, font panel, undo, spell
-  // checking, and other shared properties are correct.
+  // Re-establish shared state on the new first text view.  The text view
+  // inherits NSTextViewSharedData from its siblings during addPage, but some
+  // properties (binding, observer, inspector bar) must be set up here after
+  // the transition completes.  The other setters are belt-and-suspenders to
+  // ensure the delegate, font panel, undo, and rich-text state are correct.
   NSTextView *newFirstTextView = [self firstTextView];
   BOOL rich = [[self document] isRichText];
   [newFirstTextView setDelegate:self];
@@ -1339,46 +1372,145 @@
   return NO;
 }
 
-/* Layout manager delegation message */
+/* Layout manager delegation message.  Adding/removing pages modifies the view
+ * hierarchy (addSubview/removeFromSuperview).  When this callback fires during
+ * a display cycle (layout triggered by drawRect:), modifying the view hierarchy
+ * throws an exception.  Detect this situation and defer page changes until the
+ * display cycle completes.
+ */
 
 - (void)layoutManager:(NSLayoutManager *)layoutManager
     didCompleteLayoutForTextContainer:(NSTextContainer *)textContainer
                                 atEnd:(BOOL)layoutFinishedFlag {
-  if (_hasMultiplePages) {
-    MultiplePageView *pagesView = [_scrollView documentView];
-    NSArray *containers = [layoutManager textContainers];
+  if (!_hasMultiplePages) return;
 
-    if (!layoutFinishedFlag || (textContainer == nil)) {
-      // Either layout is not finished or it is but there are glyphs laid
-      // nowhere.
-      NSTextContainer *lastContainer = [containers lastObject];
+  // If called during a view display cycle, defer page changes.
+  if ([NSGraphicsContext currentContext]) {
+    if (!_pageUpdateDeferred) {
+      _pageUpdateDeferred = YES;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        self->_pageUpdateDeferred = NO;
+        [self _syncPages];
+      });
+    }
+    return;
+  }
 
-      if ((textContainer == lastContainer) || (textContainer == nil)) {
-        // Add a new page if the newly full container is the last container or
-        // the nowhere container. Do this only if there are glyphs laid in the
-        // last container (temporary solution for 3729692, until AppKit makes
-        // something better available.)
-        if ([layoutManager glyphRangeForTextContainer:lastContainer].length > 0) {
-          [self addPage];
-          if (NSTextLayoutOrientationVertical == [pagesView layoutOrientation]) {
-            [self updateTextViewGeometry];
-          }
+  [self _handleLayoutForContainer:textContainer
+                            atEnd:layoutFinishedFlag
+                    layoutManager:layoutManager];
+}
+
+/* Deferred page sync — called after a display cycle that needed page changes. */
+- (void)_syncPages {
+  if (!_hasMultiplePages) return;
+  NSLayoutManager *lm = [self layoutManager];
+  NSArray *containers = [lm textContainers];
+  if ([containers count] == 0) return;
+
+  // Force layout completion.  Each ensureLayoutForTextContainer: may add one
+  // page (via the delegate cascade), so keep going until no new pages appear.
+  NSUInteger previousCount = 0;
+  while ([containers count] != previousCount) {
+    previousCount = [containers count];
+    [lm ensureLayoutForTextContainer:[containers lastObject]];
+    containers = [lm textContainers];
+  }
+
+  // Remove excess empty trailing pages.
+  NSUInteger count = [containers count];
+  while (count > 1) {
+    NSTextContainer *last = [containers objectAtIndex:count - 1];
+    if ([lm glyphRangeForTextContainer:last].length == 0) {
+      [self removePage];
+      count--;
+      containers = [lm textContainers];
+    } else {
+      break;
+    }
+  }
+
+  MultiplePageView *pagesView = [_scrollView documentView];
+  if ([pagesView isKindOfClass:[MultiplePageView class]] &&
+      NSTextLayoutOrientationVertical == [pagesView layoutOrientation]) {
+    [self updateTextViewGeometry];
+  }
+  [[self document] setOriginalOrientationSections:nil];
+}
+
+/* Core page-add/remove logic, called from the layout delegate callback when
+ * not inside a display cycle.
+ */
+- (void)_handleLayoutForContainer:(NSTextContainer *)textContainer
+                            atEnd:(BOOL)layoutFinishedFlag
+                    layoutManager:(NSLayoutManager *)layoutManager {
+  MultiplePageView *pagesView = [_scrollView documentView];
+  NSArray *containers = [layoutManager textContainers];
+
+  if (!layoutFinishedFlag || (textContainer == nil)) {
+    // Either layout is not finished or it is but there are glyphs laid
+    // nowhere.
+    NSTextContainer *lastContainer = [containers lastObject];
+
+    if ((textContainer == lastContainer) || (textContainer == nil)) {
+      // Add a new page if the newly full container is the last container or
+      // the nowhere container. Do this only if there are glyphs laid in the
+      // last container (temporary solution for 3729692, until AppKit makes
+      // something better available.)
+      if ([layoutManager glyphRangeForTextContainer:lastContainer].length > 0) {
+        [self addPage];
+        if (NSTextLayoutOrientationVertical == [pagesView layoutOrientation]) {
+          [self updateTextViewGeometry];
         }
       }
-    } else {
-      // Layout is done and it all fit.  See if we can axe some pages.
-      NSUInteger lastUsedContainerIndex = [containers indexOfObjectIdenticalTo:textContainer];
-      NSUInteger numContainers = [containers count];
-      while (++lastUsedContainerIndex < numContainers) {
-        [self removePage];
-      }
-
-      if (NSTextLayoutOrientationVertical == [pagesView layoutOrientation]) {
-        [self updateTextViewGeometry];
-      }
-
-      [[self document] setOriginalOrientationSections:nil];
     }
+  } else {
+    // Layout is done and it all fit.  See if we can axe some pages.
+    // Skip page removal if we are inside addPage's addTextContainer: call.
+    // During addTextContainer:, the layout manager may fire this callback
+    // reporting "all fit" while the new container is still empty (e.g.,
+    // during the initial switch to multi-page mode when the old single-page
+    // container still holds all the text).  Removing the new container here
+    // would destroy the page that addPage is setting up.  Excess pages will
+    // be cleaned up by subsequent layout passes or _syncPages.
+    if (_addingPageCount > 0) return;
+
+    NSUInteger lastUsedContainerIndex = [containers indexOfObjectIdenticalTo:textContainer];
+    NSUInteger numContainers = [containers count];
+
+    // Collect strong references to the text views that will be removed.
+    // This callback can fire re-entrantly during event handling (e.g.,
+    // menuForEvent: triggers layout, which removes pages while a text view
+    // is still processing the right-click event). Without keeping the text
+    // views alive, the calling text view's self pointer becomes dangling and
+    // ARC crashes trying to retain it in the delegate method.
+    NSMutableArray *removedTextViews = nil;
+    if (lastUsedContainerIndex + 1 < numContainers) {
+      removedTextViews = [NSMutableArray array];
+      for (NSUInteger i = lastUsedContainerIndex + 1; i < numContainers; i++) {
+        NSTextView *tv = [[containers objectAtIndex:i] textView];
+        if (tv) [removedTextViews addObject:tv];
+      }
+    }
+
+    while (++lastUsedContainerIndex < numContainers) {
+      [self removePage];
+    }
+
+    // Defer release of removed text views until after the current event
+    // finishes processing, so any text view still on the call stack (e.g.,
+    // inside menuForEvent:) remains valid.
+    if ([removedTextViews count] > 0) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        (void)removedTextViews;
+      });
+    }
+
+    if (NSTextLayoutOrientationVertical == [pagesView layoutOrientation]) {
+      [self updateTextViewGeometry];
+    }
+
+    [[self document] setOriginalOrientationSections:nil];
   }
 }
 
