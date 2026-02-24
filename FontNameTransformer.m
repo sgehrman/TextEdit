@@ -13,7 +13,7 @@
 
 
 @implementation FontNameTransformer
-+ (Class)tranformedValueClass {
++ (Class)transformedValueClass {
     return [NSString class];
 }
 

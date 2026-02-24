@@ -879,7 +879,7 @@
     if (linkURL) {
         NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
         if ([linkURL isFileURL]) {
-	    NSError *error;
+	    NSError *error = nil;
             if (![linkURL checkResourceIsReachableAndReturnError:&error]) {	// To be able to present an error panel, see if the file is reachable
                 [[self document] performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)(void)) {
                     NSAlert *alert = [NSAlert alertWithError:error];
@@ -901,7 +901,12 @@
                         }
                     }
                     if (openInTextEdit) {
-                        [[NSDocumentController sharedDocumentController] openDocumentWithContentsOfURL:linkURL display:YES completionHandler:^(NSDocument *document, BOOL documentWasAlreadyOpen, NSError *error) {}];
+                        [[NSDocumentController sharedDocumentController] openDocumentWithContentsOfURL:linkURL display:YES completionHandler:^(NSDocument *document, BOOL documentWasAlreadyOpen, NSError *error) {
+                            if (!document && error) {
+                                NSAlert *alert = [NSAlert alertWithError:error];
+                                [alert runModal];
+                            }
+                        }];
                         return YES;
                     }
                 }

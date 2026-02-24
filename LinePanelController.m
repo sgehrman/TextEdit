@@ -122,7 +122,7 @@
 /* If the user enters a line specification and hits return, we want to order the panel out if successful.  Hence this extra action method.
 */
 - (IBAction)lineFieldChanged:(id)sender {
-    NSError *error;
+    NSError *error = nil;
     if ([@"" isEqual:[sender stringValue]]) return;	// Don't do anything on empty string
     if ([self selectLinesUsingDescription:[sender stringValue] error:&error]) {
 	[[self window] orderOut:nil];
@@ -135,7 +135,7 @@
 /* Default action for the "Select" button.
 */
 - (IBAction)selectClicked:(id)sender {
-    NSError *error;
+    NSError *error = nil;
     if ([@"" isEqual:[lineField stringValue]]) return;	// Don't do anything on empty string
     if (![self selectLinesUsingDescription:[lineField stringValue] error:&error]) {
 	[[self window] presentError:error];

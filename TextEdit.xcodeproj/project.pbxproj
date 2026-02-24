@@ -523,13 +523,12 @@
 		41534B8F08A2B299002069FE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ARCHS = "$(ARCHS_STANDARD)";
 				BUILD_PHASING = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_OBJC_GC = unsupported;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				INFOPLIST_FILE = "Info-TextEdit.plist";
@@ -542,15 +541,8 @@
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.apple.TextEdit;
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				PRODUCT_NAME = TextEdit;
-				SECTORDER_FLAGS = (
-					"-sectorder",
-					__TEXT,
-					__text,
-					TextEdit.scatterload,
-					"-e",
-					start,
-				);
 				VERSIONING_SYSTEM = "apple-generic";
 				WARNING_CFLAGS = (
 					"-Wmost",
@@ -558,19 +550,17 @@
 					"-Wno-unknown-pragmas",
 				);
 				WRAPPER_EXTENSION = app;
-				ZERO_LINK = YES;
 			};
 			name = Debug;
 		};
 		41534B9008A2B299002069FE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				ARCHS = "$(ARCHS_STANDARD)";
 				BUILD_PHASING = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_ENABLE_OBJC_GC = unsupported;
 				INFOPLIST_FILE = "Info-TextEdit.plist";
 				INSTALL_GROUP = wheel;
 				INSTALL_OWNER = root;
@@ -581,15 +571,8 @@
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.apple.TextEdit;
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				PRODUCT_NAME = TextEdit;
-				SECTORDER_FLAGS = (
-					"-sectorder",
-					__TEXT,
-					__text,
-					TextEdit.scatterload,
-					"-e",
-					start,
-				);
 				VERSIONING_SYSTEM = "apple-generic";
 				WARNING_CFLAGS = (
 					"-Wmost",
@@ -597,7 +580,6 @@
 					"-Wno-unknown-pragmas",
 				);
 				WRAPPER_EXTENSION = app;
-				ZERO_LINK = NO;
 			};
 			name = Release;
 		};

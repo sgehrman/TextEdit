@@ -925,8 +925,8 @@ In addition we overwrite this method as a way to tell that the document has been
 }
 
 - (void)updateChangeCount:(NSDocumentChangeType)change {
-    NSError *error;
-    
+    NSError *error = nil;
+
     // When a document is changed, it ceases to be transient.
     [self setTransient:NO];
     

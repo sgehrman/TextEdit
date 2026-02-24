@@ -287,7 +287,7 @@
 
 - (BOOL)lastSelectedIgnoreHTMLForURL:(NSURL *)url {
     NSDictionary *options = [customOpenSettings objectForKey:url];
-    return options ? [[options objectForKey:IgnoreHTML] unsignedIntegerValue] : [[NSUserDefaults standardUserDefaults] boolForKey:IgnoreHTML];;
+    return options ? [[options objectForKey:IgnoreHTML] unsignedIntegerValue] : [[NSUserDefaults standardUserDefaults] boolForKey:IgnoreHTML];
 }
 
 - (BOOL)lastSelectedIgnoreRichForURL:(NSURL *)url {
