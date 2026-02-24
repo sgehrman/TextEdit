@@ -705,20 +705,20 @@
 
   _hasMultiplePages = pages;
 
-  [[self firstTextView] removeObserver:self forKeyPath:@"backgroundColor"];
-  [[self firstTextView] unbind:@"editable"];
+  // Keep the old first text view alive for the duration of this method.
+  // The if/else blocks below replace the document view and remove old text
+  // containers, which releases the old text view.  But makeFirstResponder:
+  // for the new text view doesn't happen until the end of the method.  If
+  // the old text view is freed before then, the window holds a dangling
+  // first responder pointer that crashes in becomeKeyWindow → acquireKeyFocus
+  // (e.g., when the menu returns key status to the window).
+  NSTextView *oldFirstTextView = [self firstTextView];
 
-  // Clear the first responder before swapping text views.  The old text view
-  // will be deallocated when its local strong reference goes out of scope,
-  // but makeFirstResponder: for the new text view doesn't happen until the
-  // end of this method.  Without this, the window holds a dangling first
-  // responder pointer that crashes in becomeKeyWindow → acquireKeyFocus
-  // (e.g., when the menu bar returns key status to the window after the
-  // Format → Wrap to Page action completes).
-  [[_scrollView window] makeFirstResponder:nil];
+  [oldFirstTextView removeObserver:self forKeyPath:@"backgroundColor"];
+  [oldFirstTextView unbind:@"editable"];
 
-  if ([self firstTextView]) {
-    orientation = [[self firstTextView] layoutOrientation];
+  if (oldFirstTextView) {
+    orientation = [oldFirstTextView layoutOrientation];
   } else {
     NSArray *sections = [[self document] originalOrientationSections];
 
@@ -731,7 +731,6 @@
   }
 
   if (_hasMultiplePages) {
-    NSTextView *textView = [self firstTextView];
     MultiplePageView *pagesView = [[MultiplePageView alloc] init];
 
     [_scrollView setDocumentView:pagesView];
@@ -742,7 +741,7 @@
     // Add the first new page before we remove the old container so we can avoid
     // losing all the shared text view state.
     [self addPage];
-    if (textView) {
+    if (oldFirstTextView) {
       [[self layoutManager] removeTextContainerAtIndex:0];
     }
 
@@ -776,14 +775,21 @@
     NSSize size = [_scrollView contentSize];
     NSTextContainer *textContainer =
         [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
+
+    // Insert the container into the layout manager BEFORE creating the text
+    // view, so initWithFrame:textContainer: properly connects to the text
+    // system and inherits NSTextViewSharedData from sibling text views.
+    [[self layoutManager] insertTextContainer:textContainer atIndex:0];
+
+    // Create the text view while the old page containers are still in the
+    // layout manager.  This way initWithFrame:textContainer: finds siblings
+    // and inherits their NSTextViewSharedData.  If we removed old containers
+    // first, _fixSharedData during removal would update shared data to
+    // reference old text views that are about to be freed, corrupting the
+    // shared state for subsequent text views.
     NSTextView *textView =
         [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height)
                             textContainer:textContainer];
-
-    // Insert the single container as the first container in the layout manager
-    // before removing the existing pages in order to preserve the shared view
-    // state.
-    [[self layoutManager] insertTextContainer:textContainer atIndex:0];
 
     if ([[_scrollView documentView] isKindOfClass:[MultiplePageView class]]) {
       NSArray *textContainers = [[self layoutManager] textContainers];
@@ -834,6 +840,7 @@
   [newFirstTextView setIncrementalSearchingEnabled:YES];
   [newFirstTextView setAllowsUndo:YES];
   [newFirstTextView setAllowsDocumentBackgroundColorChange:YES];
+  [newFirstTextView setBackgroundColor:[[self document] backgroundColor]];
   [newFirstTextView setRichText:rich];
   [newFirstTextView setUsesRuler:rich];
   [newFirstTextView setImportsGraphics:rich];
