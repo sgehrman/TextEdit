@@ -20,6 +20,11 @@
 #import "TextEditMisc.h"
 #import "Controller.h"
 
+@interface DocumentPropertiesPanelController ()
+@property (nonatomic, strong) IBOutlet id documentObjectController;
+@property (nonatomic, strong) id inspectedDocument;
+@end
+
 @implementation DocumentPropertiesPanelController
 
 - (id)init {
@@ -35,8 +40,8 @@
 */
 - (void)activeDocumentChanged {
     id doc = [[[NSApp mainWindow] windowController] document];
-    if (doc != inspectedDocument) {
-	if (inspectedDocument) [documentObjectController commitEditing];
+    if (doc != _inspectedDocument) {
+	if (_inspectedDocument) [_documentObjectController commitEditing];
 	[self setValue:(doc && [doc isKindOfClass:[Document class]]) ? doc : nil forKey:@"inspectedDocument"];   
     }
 }
@@ -52,11 +57,11 @@
 /* When controls in the panel start editing, register it with the inspected document.
 */
 - (void)objectDidBeginEditing:(id)editor {
-    [inspectedDocument objectDidBeginEditing:editor];
+    [_inspectedDocument objectDidBeginEditing:editor];
 }
 
 - (void)objectDidEndEditing:(id)editor {
-    [inspectedDocument objectDidEndEditing:editor];
+    [_inspectedDocument objectDidEndEditing:editor];
 }
 
 /* We don't want to do any observing until the properties panel is brought up.
@@ -85,7 +90,7 @@
 /* Whenever the properties panel loses key status, we want to commit editing.
 */
 - (void)documentPropertiesPanelDidResignKey:(NSNotification *)notification {
-    [documentObjectController commitEditing];
+    [_documentObjectController commitEditing];
 }
 
 /* Since we want the panel to toggle... Note that if the window is visible and key, we order it out; otherwise we make it key.

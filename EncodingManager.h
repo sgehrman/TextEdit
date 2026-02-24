@@ -21,17 +21,12 @@ enum {
 };
 
 
-@interface EncodingPopUpButtonCell : NSPopUpButtonCell {
-}
+@interface EncodingPopUpButtonCell : NSPopUpButtonCell
 @end
 
 
     
-@interface EncodingManager : NSObject {
-    @private
-    IBOutlet NSMatrix *encodingMatrix;
-    NSArray *encodings;
-}
+@interface EncodingManager : NSObject
 
 /* There is just one instance...
 */

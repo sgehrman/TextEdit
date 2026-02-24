@@ -17,7 +17,7 @@
 
 - (id)initWithFrame:(NSRect)rect {
     if ((self = [super initWithFrame:rect])) {
-        numPages = 0;
+        _numberOfPages = 0;
         [self setLineColor:[NSColor lightGrayColor]];
         [self setMarginColor:[NSColor whiteColor]];
 	/* This will set the frame to be whatever's appropriate... */
@@ -37,13 +37,13 @@
 - (void)updateFrame {
     if ([self superview]) {
         NSRect rect = NSZeroRect;
-        rect.size = [printInfo paperSize];
-        if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
-            rect.size.height = rect.size.height * numPages;
-            if (numPages > 1) rect.size.height += [self pageSeparatorHeight] * (numPages - 1);
+        rect.size = [_printInfo paperSize];
+        if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
+            rect.size.height = rect.size.height * _numberOfPages;
+            if (_numberOfPages > 1) rect.size.height += [self pageSeparatorHeight] * (_numberOfPages - 1);
         } else {
-            rect.size.width = rect.size.width * numPages;
-            if (numPages > 1) rect.size.width += [self pageSeparatorHeight] * (numPages - 1);
+            rect.size.width = rect.size.width * _numberOfPages;
+            if (_numberOfPages > 1) rect.size.width += [self pageSeparatorHeight] * (_numberOfPages - 1);
         }
         rect.size = [self convertSize:rect.size toView:[self superview]];
         [self setFrame:rect];
@@ -51,32 +51,24 @@
 }
 
 - (void)setPrintInfo:(NSPrintInfo *)anObject {
-    if (printInfo != anObject) {
-        printInfo = [anObject copy];
+    if (_printInfo != anObject) {
+        _printInfo = [anObject copy];
         [self updateFrame];
         [self setNeedsDisplay:YES];	/* Because the page size or margins might change (could optimize this) */
     }
 }
 
-- (NSPrintInfo *)printInfo {
-    return printInfo;
-}
-
 - (void)setNumberOfPages:(NSUInteger)num {
-    if (numPages != num) {
+    if (_numberOfPages != num) {
 	NSRect oldFrame = [self frame];
         NSRect newFrame;
-        numPages = num;
+        _numberOfPages = num;
         [self updateFrame];
 	newFrame = [self frame];
         if (newFrame.size.height > oldFrame.size.height) {
 	    [self setNeedsDisplayInRect:NSMakeRect(oldFrame.origin.x, NSMaxY(oldFrame), oldFrame.size.width, NSMaxY(newFrame) - NSMaxY(oldFrame))];
         }
     }
-}
-
-- (NSUInteger)numberOfPages {
-    return numPages;
 }
     
 - (CGFloat)pageSeparatorHeight {
@@ -85,23 +77,23 @@
 
 
 - (NSSize)documentSizeInPage {
-    return documentSizeForPrintInfo(printInfo);
+    return documentSizeForPrintInfo(_printInfo);
 }
 
 - (NSRect)documentRectForPageNumber:(NSUInteger)pageNumber {	/* First page is page 0, of course! */
     NSRect rect = [self pageRectForPageNumber:pageNumber];
-    rect.origin.x += [printInfo leftMargin] - defaultTextPadding();
-    rect.origin.y += [printInfo topMargin];
+    rect.origin.x += [_printInfo leftMargin] - defaultTextPadding();
+    rect.origin.y += [_printInfo topMargin];
     rect.size = [self documentSizeInPage];
     return rect;
 }
 
 - (NSRect)pageRectForPageNumber:(NSUInteger)pageNumber {
     NSRect rect;
-    rect.size = [printInfo paperSize];
+    rect.size = [_printInfo paperSize];
     rect.origin = [self frame].origin;
 
-    if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
+    if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
         rect.origin.y += ((rect.size.height + [self pageSeparatorHeight]) * pageNumber);
     } else {
         rect.origin.x += (NSWidth([self bounds]) - ((rect.size.width + [self pageSeparatorHeight]) * (pageNumber + 1)));
@@ -113,71 +105,59 @@
 */
 - (NSUInteger)pageNumberForPoint:(NSPoint)loc {
     NSUInteger pageNumber;
-    if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
+    if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
         if (loc.y < 0) pageNumber = 0;
-        else if (loc.y >= [self bounds].size.height) pageNumber = numPages - 1;
-        else pageNumber = loc.y / ([printInfo paperSize].height + [self pageSeparatorHeight]);
+        else if (loc.y >= [self bounds].size.height) pageNumber = _numberOfPages - 1;
+        else pageNumber = loc.y / ([_printInfo paperSize].height + [self pageSeparatorHeight]);
     } else {
-        if (loc.x < 0) pageNumber = numPages - 1;
+        if (loc.x < 0) pageNumber = _numberOfPages - 1;
         else if (loc.x >= [self bounds].size.width) pageNumber = 0;
-        else pageNumber = (NSWidth([self bounds]) - loc.x) / ([printInfo paperSize].width + [self pageSeparatorHeight]);
+        else pageNumber = (NSWidth([self bounds]) - loc.x) / ([_printInfo paperSize].width + [self pageSeparatorHeight]);
     }
     return pageNumber;    
 }
 
 - (void)setLineColor:(NSColor *)color {
-    if (color != lineColor) {
-        lineColor = [color copy];
+    if (color != _lineColor) {
+        _lineColor = [color copy];
         [self setNeedsDisplay:YES];
     }
-}
-
-- (NSColor *)lineColor {
-    return lineColor;
 }
 
 - (void)setMarginColor:(NSColor *)color {
-    if (color != marginColor) {
-        marginColor = [color copy];
+    if (color != _marginColor) {
+        _marginColor = [color copy];
         [self setNeedsDisplay:YES];
     }
 }
 
-- (NSColor *)marginColor {
-    return marginColor;
-}
-
 - (void)setLayoutOrientation:(NSTextLayoutOrientation)orientation {
-    if (orientation != layoutOrientation) {
-        layoutOrientation = orientation;
+    if (orientation != _layoutOrientation) {
+        _layoutOrientation = orientation;
 
         [self updateFrame];
     }
 }
 
-- (NSTextLayoutOrientation)layoutOrientation {
-    return layoutOrientation;
-}
-
 - (void)drawRect:(NSRect)rect {
     if ([[NSGraphicsContext currentContext] isDrawingToScreen]) {
-        NSSize paperSize = [printInfo paperSize];
+        NSSize paperSize = [_printInfo paperSize];
         NSUInteger firstPage;
         NSUInteger lastPage;
         NSUInteger cnt;
 
-        if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
+        if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
             firstPage = NSMinY(rect) / (paperSize.height + [self pageSeparatorHeight]);
             lastPage = NSMaxY(rect) / (paperSize.height + [self pageSeparatorHeight]);
         } else {
-            firstPage = numPages - (NSMaxX(rect) / (paperSize.width + [self pageSeparatorHeight]));
-            lastPage = numPages - (NSMinX(rect) / (paperSize.width + [self pageSeparatorHeight]));
+            firstPage = _numberOfPages - (NSMaxX(rect) / (paperSize.width + [self pageSeparatorHeight]));
+            lastPage = _numberOfPages - (NSMinX(rect) / (paperSize.width + [self pageSeparatorHeight]));
         }
 
-        [marginColor set];
+        [_marginColor set];
         NSRectFill(rect);
 
-        [lineColor set];
+        [_lineColor set];
         for (cnt = firstPage; cnt <= lastPage; cnt++) {
 	    // Draw boundary around the page, making sure it doesn't overlap the document area in terms of pixels
 	    NSRect docRect = NSInsetRect([self centerScanRect:[self documentRectForPageNumber:cnt]], -1.0, -1.0);
@@ -190,7 +170,7 @@
             for (cnt = firstPage; cnt <= lastPage; cnt++) {
                 NSRect pageRect = [self pageRectForPageNumber:cnt];
                 NSRect separatorRect;
-                if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
+                if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
                     separatorRect = NSMakeRect(NSMinX(pageRect), NSMaxY(pageRect), NSWidth(pageRect), [self pageSeparatorHeight]);
                 } else {
                     separatorRect = NSMakeRect(NSMaxX(pageRect), NSMinY(pageRect), [self pageSeparatorHeight], NSHeight(pageRect));
@@ -215,13 +195,13 @@
         result = pageRect;
     } else {        // Smart magnify between pages, or the empty area beyond the side or bottom/top of the page; return the extended area for the page
         result = pageRect;
-        if (NSTextLayoutOrientationHorizontal == layoutOrientation) {
+        if (NSTextLayoutOrientationHorizontal == _layoutOrientation) {
             if (NSMaxX(visibleRect) > NSMaxX(pageRect)) result.size.width = NSMaxX(visibleRect);        // include area to the right of the paper
-            if (pageNumber + 1 < numPages) result.size.height += [self pageSeparatorHeight];
+            if (pageNumber + 1 < _numberOfPages) result.size.height += [self pageSeparatorHeight];
             if (location.y > NSMaxY(result)) result.size.height = ceil(location.y - result.origin.y);   // extend the rect out to include location
         } else {
             if (NSMaxY(visibleRect) > NSMaxY(pageRect)) result.size.height = NSMaxY(visibleRect);       // include area below the paper
-            if (pageNumber + 1 < numPages) result.size.width += [self pageSeparatorHeight];
+            if (pageNumber + 1 < _numberOfPages) result.size.width += [self pageSeparatorHeight];
             if (location.x > NSMaxX(result)) result.size.width = ceil(location.x - result.origin.x);    // extend the rect out to include location
         }
     }
@@ -242,7 +222,7 @@
 /* This method makes sure that we center the view on the page. By default, the text view "bleeds" into the margins by defaultTextPadding() as a way to provide padding around the editing area. If we don't do anything special, the text view appears at the margin, which causes the text to be offset on the page by defaultTextPadding(). This method makes sure the text is centered.
 */
 - (NSPoint)locationOfPrintRect:(NSRect)rect {
-    NSSize paperSize = [printInfo paperSize];
+    NSSize paperSize = [_printInfo paperSize];
     return NSMakePoint((paperSize.width - rect.size.width) / 2.0, (paperSize.height - rect.size.height) / 2.0);
 }
 

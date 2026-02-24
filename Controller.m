@@ -67,8 +67,6 @@ static NSDictionary *defaultValues() {
 
 @implementation Controller
 
-@synthesize preferencesController, propertiesController, lineController;
-
 + (void)initialize {
     // Set up default values for preferences managed by NSUserDefaultsController
     [[NSUserDefaults standardUserDefaults] registerDefaults:defaultValues()];

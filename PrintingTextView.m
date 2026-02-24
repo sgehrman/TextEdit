@@ -16,9 +16,12 @@
 #import "TextEditMisc.h"
 
 
-@implementation PrintingTextView
+@interface PrintingTextView ()
+@property (nonatomic, assign) NSSize previousValueOfDocumentSizeInPage;
+@property (nonatomic, assign) BOOL previousValueOfWrappingToFit;
+@end
 
-@synthesize printPanelAccessoryController, originalSize;
+@implementation PrintingTextView
 
 /* Override of knowsPageRange: checks printing parameters against the last invocation, and if not the same, resizes the view and relays out the text.  On first invocation, the saved size will be 0,0, which will cause the text to be laid out.
 */
@@ -26,9 +29,9 @@
     NSSize documentSizeInPage = documentSizeForPrintInfo([self.printPanelAccessoryController representedObject]);
     BOOL wrappingToFit = self.printPanelAccessoryController.wrappingToFit;
     
-    if (!NSEqualSizes(previousValueOfDocumentSizeInPage, documentSizeInPage) || (previousValueOfWrappingToFit != wrappingToFit)) {
-        previousValueOfDocumentSizeInPage = documentSizeInPage;
-        previousValueOfWrappingToFit = wrappingToFit;
+    if (!NSEqualSizes(_previousValueOfDocumentSizeInPage, documentSizeInPage) || (_previousValueOfWrappingToFit != wrappingToFit)) {
+        _previousValueOfDocumentSizeInPage = documentSizeInPage;
+        _previousValueOfWrappingToFit = wrappingToFit;
         
         NSSize size = wrappingToFit ? documentSizeInPage : self.originalSize;
         [self setFrame:NSMakeRect(0.0, 0.0, size.width, size.height)];

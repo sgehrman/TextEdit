@@ -15,6 +15,10 @@
 #import "TextEditMisc.h"
 #import "Controller.h"
 
+@interface LinePanelController ()
+@property (nonatomic, strong) IBOutlet NSTextField *lineField;
+@end
+
 @implementation LinePanelController
 
 - (id)init {
@@ -136,8 +140,8 @@
 */
 - (IBAction)selectClicked:(id)sender {
     NSError *error = nil;
-    if ([@"" isEqual:[lineField stringValue]]) return;	// Don't do anything on empty string
-    if (![self selectLinesUsingDescription:[lineField stringValue] error:&error]) {
+    if ([@"" isEqual:[_lineField stringValue]]) return;	// Don't do anything on empty string
+    if (![self selectLinesUsingDescription:[_lineField stringValue] error:&error]) {
 	[[self window] presentError:error];
 	[[self window] makeKeyAndOrderFront:nil];
     }

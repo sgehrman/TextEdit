@@ -17,6 +17,14 @@
 #import "TextEditMisc.h"
 #import "TextEditErrors.h"
 
+@interface DocumentWindowController ()
+@property (nonatomic, strong) IBOutlet ScalingScrollView *scrollView;
+@property (nonatomic, strong) NSLayoutManager *layoutMgr;
+@property (nonatomic, assign) BOOL hasMultiplePages;
+@property (nonatomic, assign) BOOL rulerIsBeingDisplayed;
+@property (nonatomic, assign) BOOL isSettingSize;
+@end
+
 @interface DocumentWindowController(Private)
 
 - (void)setDocument:(Document *)doc; // Overridden with more specific type. Expects Document instance.
@@ -49,9 +57,9 @@
 
 - (id)init {
     if (self = [super initWithWindowNibName:@"DocumentWindow"]) {
-	layoutMgr = [[NSLayoutManager alloc] init];
-	[layoutMgr setDelegate:self];
-	[layoutMgr setAllowsNonContiguousLayout:YES];
+	_layoutMgr = [[NSLayoutManager alloc] init];
+	[_layoutMgr setDelegate:self];
+	[_layoutMgr setAllowsNonContiguousLayout:YES];
     }
     return self;
 }
@@ -62,8 +70,8 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 
     [[self firstTextView] removeObserver:self forKeyPath:@"backgroundColor"];
-    [scrollView removeObserver:self forKeyPath:@"scaleFactor"];
-    [[scrollView verticalScroller] removeObserver:self forKeyPath:@"scrollerStyle"];
+    [_scrollView removeObserver:self forKeyPath:@"scaleFactor"];
+    [[_scrollView verticalScroller] removeObserver:self forKeyPath:@"scrollerStyle"];
 
     [self showRulerDelayed:NO];
 }
@@ -79,18 +87,18 @@
     Document *oldDoc = [self document];
     
     if (oldDoc) {
-        [layoutMgr unbind:@"hyphenationFactor"];
+        [_layoutMgr unbind:@"hyphenationFactor"];
         [[self firstTextView] unbind:@"editable"];
     }
     [super setDocument:doc];
     if (doc) {
-        [layoutMgr bind:@"hyphenationFactor" toObject:self withKeyPath:@"document.hyphenationFactor" options:nil];
+        [_layoutMgr bind:@"hyphenationFactor" toObject:self withKeyPath:@"document.hyphenationFactor" options:nil];
         [[self firstTextView] bind:@"editable" toObject:self withKeyPath:@"document.readOnly" options:[NSDictionary dictionaryWithObject:NSNegateBooleanTransformerName forKey:NSValueTransformerNameBindingOption]];
     }
     if (oldDoc != doc) {
 	if (oldDoc) {
             /* Remove layout manager from the old Document's text storage. No need to retain as we already own the object. */
-	    [[oldDoc textStorage] removeLayoutManager:layoutMgr];
+	    [[oldDoc textStorage] removeLayoutManager:_layoutMgr];
 	    
 	    [oldDoc removeObserver:self forKeyPath:@"printInfo"];
 	    [oldDoc removeObserver:self forKeyPath:@"richText"];
@@ -99,13 +107,13 @@
 	}
 	
 	if (doc) {
-            [[doc textStorage] addLayoutManager:layoutMgr];
+            [[doc textStorage] addLayoutManager:_layoutMgr];
 	    
 	    if ([self isWindowLoaded]) {
                 [self setHasMultiplePages:[doc hasMultiplePages] force:NO];
                 [self setupInitialTextViewSharedState];
                 [self setupWindowForDocument];
-		if ([doc hasMultiplePages]) [scrollView setScaleFactor:[[self document] scaleFactor] adjustPopup:YES];
+		if ([doc hasMultiplePages]) [_scrollView setScaleFactor:[[self document] scaleFactor] adjustPopup:YES];
                 [[doc undoManager] removeAllActions];
             }
 	    
@@ -123,7 +131,7 @@
 }
 
 - (NSLayoutManager *)layoutManager {
-    return layoutMgr;
+    return _layoutMgr;
 }
 
 - (NSTextView *)firstTextView {
@@ -164,11 +172,11 @@
 	if ([keyPath isEqualToString:@"backgroundColor"]) {
 	    [[self document] setBackgroundColor:[[self firstTextView] backgroundColor]];
 	} 
-    } else if (object == scrollView) {
+    } else if (object == _scrollView) {
 	if ([keyPath isEqualToString:@"scaleFactor"]) {
-	    [[self document] setScaleFactor:[scrollView scaleFactor]];
+	    [[self document] setScaleFactor:[_scrollView scaleFactor]];
 	} 
-    } else if (object == [scrollView verticalScroller]) {
+    } else if (object == [_scrollView verticalScroller]) {
         if ([keyPath isEqualToString:@"scrollerStyle"]) {
             [self invalidateRestorableState];
             NSSize size = [[self document] viewSize];
@@ -180,7 +188,7 @@
 	if ([keyPath isEqualToString:@"printInfo"]) {
 	    [self printInfoUpdated];
 	} else if ([keyPath isEqualToString:@"viewSize"]) {
-	    if (!isSettingSize) {
+	    if (!_isSettingSize) {
 		NSSize size = [[self document] viewSize];
 		if (!NSEqualSizes(size, NSZeroSize)) {
 		    [self resizeWindowForViewSize:size];
@@ -216,13 +224,13 @@
         }
     }
 
-    if (hasMultiplePages && (orientation != NSTextLayoutOrientationHorizontal)) [self setupPagesViewForLayoutOrientation:orientation];
+    if (_hasMultiplePages && (orientation != NSTextLayoutOrientationHorizontal)) [self setupPagesViewForLayoutOrientation:orientation];
 }
 
 - (void)printInfoUpdated {
-    if (hasMultiplePages) {
+    if (_hasMultiplePages) {
         NSUInteger cnt;
-        MultiplePageView *pagesView = [scrollView documentView];
+        MultiplePageView *pagesView = [_scrollView documentView];
         NSArray *textContainers = [[self layoutManager] textContainers];
 	
         [pagesView setPrintInfo:[[self document] printInfo]];
@@ -239,16 +247,16 @@
 /* Method to lazily display ruler. Call with YES to display, NO to cancel display; this method doesn't remove the ruler. 
 */
 - (void)showRulerDelayed:(BOOL)flag {
-    if (!flag && rulerIsBeingDisplayed) {
+    if (!flag && _rulerIsBeingDisplayed) {
         [[self class] cancelPreviousPerformRequestsWithTarget:self selector:@selector(showRuler:) object:self];
-    } else if (flag && !rulerIsBeingDisplayed) {
+    } else if (flag && !_rulerIsBeingDisplayed) {
         [self performSelector:@selector(showRuler:) withObject:self afterDelay:0.0];
     }
-    rulerIsBeingDisplayed = flag;
+    _rulerIsBeingDisplayed = flag;
 }
 
 - (void)showRuler:(id)obj {
-    if (rulerIsBeingDisplayed && !obj) [self showRulerDelayed:NO];	// Cancel outstanding request, if not coming from the delayed request
+    if (_rulerIsBeingDisplayed && !obj) [self showRulerDelayed:NO];	// Cancel outstanding request, if not coming from the delayed request
     if ([[NSUserDefaults standardUserDefaults] boolForKey:ShowRuler]) [[self firstTextView] setRulerVisible:YES];
 }
 
@@ -346,7 +354,7 @@
     [view setRichText:rich];
     [view setUsesRuler:rich];	// If NO, this correctly gets rid of the ruler if it was up
     [view setUsesInspectorBar:rich];
-    if (!rich && rulerIsBeingDisplayed) [self showRulerDelayed:NO];	// Cancel delayed ruler request
+    if (!rich && _rulerIsBeingDisplayed) [self showRulerDelayed:NO];	// Cancel delayed ruler request
     if (rich && ![[self document] isReadOnly]) [self showRulerDelayed:YES];
     [view setImportsGraphics:rich];
 }
@@ -384,11 +392,11 @@
 }
 
 - (NSUInteger)numberOfPages {
-    return hasMultiplePages ? [[scrollView documentView] numberOfPages] : 1;
+    return _hasMultiplePages ? [[_scrollView documentView] numberOfPages] : 1;
 }
 
 - (void)updateTextViewGeometry {
-    MultiplePageView *pagesView = [scrollView documentView];
+    MultiplePageView *pagesView = [_scrollView documentView];
 
     [[[self layoutManager] textContainers] enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
         [[obj textView] setFrame:[pagesView documentRectForPageNumber:idx]];
@@ -396,19 +404,19 @@
 }
 
 - (void)setupPagesViewForLayoutOrientation:(NSTextLayoutOrientation)orientation {
-    MultiplePageView *pagesView = [scrollView documentView];
+    MultiplePageView *pagesView = [_scrollView documentView];
     
     [pagesView setLayoutOrientation:orientation];
     [[self firstTextView] setLayoutOrientation:orientation];
     [self updateTextViewGeometry];
     
-    [scrollView setHasHorizontalRuler:(NSTextLayoutOrientationHorizontal == orientation) ? YES : NO];
-    [scrollView setHasVerticalRuler:(NSTextLayoutOrientationHorizontal == orientation) ? NO : YES];
+    [_scrollView setHasHorizontalRuler:(NSTextLayoutOrientationHorizontal == orientation) ? YES : NO];
+    [_scrollView setHasVerticalRuler:(NSTextLayoutOrientationHorizontal == orientation) ? NO : YES];
 }
 
 - (void)addPage {
     NSUInteger numberOfPages = [self numberOfPages];
-    MultiplePageView *pagesView = [scrollView documentView];
+    MultiplePageView *pagesView = [_scrollView documentView];
 
     NSSize textSize = [pagesView documentSizeInPage];
     NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:textSize];
@@ -461,7 +469,7 @@
     NSUInteger numberOfPages = [self numberOfPages];
     NSArray *textContainers = [[self layoutManager] textContainers];
     NSTextContainer *lastContainer = [textContainers objectAtIndex:[textContainers count] - 1];
-    MultiplePageView *pagesView = [scrollView documentView];
+    MultiplePageView *pagesView = [_scrollView documentView];
     
     [pagesView setNumberOfPages:numberOfPages - 1];
     [[lastContainer textView] removeFromSuperview];
@@ -469,15 +477,15 @@
 }
 
 - (NSView *)documentView {
-    return [scrollView documentView];
+    return [_scrollView documentView];
 }
 
 - (void)setHasMultiplePages:(BOOL)pages force:(BOOL)force {
     NSTextLayoutOrientation orientation = NSTextLayoutOrientationHorizontal;
     
-    if (!force && (hasMultiplePages == pages)) return;
-    
-    hasMultiplePages = pages;
+    if (!force && (_hasMultiplePages == pages)) return;
+
+    _hasMultiplePages = pages;
     
     [[self firstTextView] removeObserver:self forKeyPath:@"backgroundColor"];
     [[self firstTextView] unbind:@"editable"];
@@ -490,11 +498,11 @@
         if (([sections count] > 0) && (NSTextLayoutOrientationVertical == [[[sections objectAtIndex:0] objectForKey:NSTextLayoutSectionOrientation] unsignedIntegerValue])) orientation = NSTextLayoutOrientationVertical;
     }
 
-    if (hasMultiplePages) {
+    if (_hasMultiplePages) {
         NSTextView *textView = [self firstTextView];
         MultiplePageView *pagesView = [[MultiplePageView alloc] init];
 	
-        [scrollView setDocumentView:pagesView];
+        [_scrollView setDocumentView:pagesView];
 	
         [pagesView setPrintInfo:[[self document] printInfo]];
         [pagesView setLayoutOrientation:orientation];
@@ -507,8 +515,8 @@
 
         if (NSTextLayoutOrientationVertical == orientation) [self updateTextViewGeometry];
         
-        [scrollView setHasVerticalScroller:YES];
-        [scrollView setHasHorizontalScroller:YES];
+        [_scrollView setHasVerticalScroller:YES];
+        [_scrollView setHasHorizontalScroller:YES];
 
         // Make sure the selected text is shown
         [[self firstTextView] scrollRangeToVisible:[[self firstTextView] selectedRange]];
@@ -526,14 +534,14 @@
             [pagesView scrollRectToVisible:visRect];
         }
     } else {
-        NSSize size = [scrollView contentSize];
+        NSSize size = [_scrollView contentSize];
         NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
         NSTextView *textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height) textContainer:textContainer];
 
         // Insert the single container as the first container in the layout manager before removing the existing pages in order to preserve the shared view state.
         [[self layoutManager] insertTextContainer:textContainer atIndex:0];
 	
-        if ([[scrollView documentView] isKindOfClass:[MultiplePageView class]]) {
+        if ([[_scrollView documentView] isKindOfClass:[MultiplePageView class]]) {
             NSArray *textContainers = [[self layoutManager] textContainers];
             NSUInteger cnt = [textContainers count];
             while (cnt-- > 1) {
@@ -553,17 +561,17 @@
         [textView setLayoutOrientation:orientation]; // this configures the above settings
 
         /* The next line should cause the multiple page view and everything else to go away */
-        [scrollView setDocumentView:textView];
+        [_scrollView setDocumentView:textView];
 
-        [scrollView setHasVerticalScroller:YES];
-        [scrollView setHasHorizontalScroller:YES];
+        [_scrollView setHasVerticalScroller:YES];
+        [_scrollView setHasHorizontalScroller:YES];
 	
         // Show the selected region
         [[self firstTextView] scrollRangeToVisible:[[self firstTextView] selectedRange]];
     }
 
-    [scrollView setHasHorizontalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? YES : NO)];
-    [scrollView setHasVerticalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? NO : YES)];
+    [_scrollView setHasHorizontalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? YES : NO)];
+    [_scrollView setHasVerticalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? NO : YES)];
 
     // Under ARC, NSTextViewSharedData is not reliably inherited by new text views
     // created during page mode transitions (the old text view's shared data may be
@@ -583,14 +591,14 @@
     [newFirstTextView setImportsGraphics:rich];
     if (rich && ![[self document] isReadOnly]) {
         if ([[NSUserDefaults standardUserDefaults] boolForKey:ShowRuler]) [newFirstTextView setRulerVisible:YES];
-        rulerIsBeingDisplayed = YES;
+        _rulerIsBeingDisplayed = YES;
     }
 
     [newFirstTextView addObserver:self forKeyPath:@"backgroundColor" options:0 context:NULL];
     [newFirstTextView bind:@"editable" toObject:self withKeyPath:@"document.readOnly" options:[NSDictionary dictionaryWithObject:NSNegateBooleanTransformerName forKey:NSValueTransformerNameBindingOption]];
 
-    [[scrollView window] makeFirstResponder:newFirstTextView];
-    [[scrollView window] setInitialFirstResponder:newFirstTextView];	// So focus won't be stolen (2934918)
+    [[_scrollView window] makeFirstResponder:newFirstTextView];
+    [[_scrollView window] setInitialFirstResponder:newFirstTextView];	// So focus won't be stolen (2934918)
 
     // Set usesInspectorBar after the text view is first responder so the inspector
     // bar (formatting toolbar) properly attaches to the window for the new text view.
@@ -605,8 +613,8 @@
         NSScrollerStyle previousScrollerStyle = [coder decodeIntegerForKey:@"scrollerStyle"];
         if (previousScrollerStyle != [NSScroller preferredScrollerStyle] && ! [[self document] hasMultiplePages]) {
             // When we encoded the frame, the window was sized for this saved style. The preferred scroller style has since changed. Given our current frame and the style it had applied, compute how big the view must have been, and then resize ourselves to make the view that size.
-            NSSize scrollViewSize = [scrollView frame].size;
-            NSSize previousViewSize = [[scrollView class] contentSizeForFrameSize:scrollViewSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:previousScrollerStyle];
+            NSSize scrollViewSize = [_scrollView frame].size;
+            NSSize previousViewSize = [[_scrollView class] contentSizeForFrameSize:scrollViewSize horizontalScrollerClass:[_scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[_scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[_scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:previousScrollerStyle];
             previousViewSize.width -= (defaultTextPadding() * 2.0);
             [self resizeWindowForViewSize:previousViewSize];
         }
@@ -630,7 +638,7 @@
         scrollerStyle = NSScrollerStyleLegacy;  // For the wrap-to-page case, which uses legacy style scrollers for now
     }
     NSRect scrollViewRect = [[window contentView] frame];
-    scrollViewRect.size = [[scrollView class] frameSizeForContentSize:size horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:scrollerStyle];
+    scrollViewRect.size = [[_scrollView class] frameSizeForContentSize:size horizontalScrollerClass:[_scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[_scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[_scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:scrollerStyle];
     NSRect newFrame = [window frameRectForContentRect:scrollViewRect];
     newFrame.origin = NSMakePoint(origWindowFrame.origin.x, NSMaxY(origWindowFrame) - newFrame.size.height);
     [window setFrame:newFrame display:YES];
@@ -643,8 +651,8 @@
     if (!NSEqualSizes(viewSize, NSZeroSize)) { // Document has a custom view size that should be used
 	[self resizeWindowForViewSize:viewSize];
     } else { // Set the window size from defaults...
-	if (hasMultiplePages) {
-	    [self resizeWindowForViewSize:[[scrollView documentView] pageRectForPageNumber:0].size];
+	if (_hasMultiplePages) {
+	    [self resizeWindowForViewSize:[[_scrollView documentView] pageRectForPageNumber:0].size];
 	} else {
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             NSInteger windowHeight = [defaults integerForKey:WindowHeight];
@@ -674,9 +682,9 @@
     [self setupWindowForDocument];
     
     // Changes to the zoom popup need to be communicated to the document
-    if ([[self document] hasMultiplePages]) [scrollView setScaleFactor:[[self document] scaleFactor] adjustPopup:YES];
-    [scrollView addObserver:self forKeyPath:@"scaleFactor" options:0 context:NULL];
-    [[scrollView verticalScroller] addObserver:self forKeyPath:@"scrollerStyle" options:0 context:NULL];
+    if ([[self document] hasMultiplePages]) [_scrollView setScaleFactor:[[self document] scaleFactor] adjustPopup:YES];
+    [_scrollView addObserver:self forKeyPath:@"scaleFactor" options:0 context:NULL];
+    [[_scrollView verticalScroller] addObserver:self forKeyPath:@"scrollerStyle" options:0 context:NULL];
     [[[self document] undoManager] removeAllActions];
 }
 
@@ -687,7 +695,7 @@
 
 /* Layout orientation sections */
 - (NSArray *)layoutOrientationSections {
-    NSArray *textContainers = [layoutMgr textContainers];
+    NSArray *textContainers = [_layoutMgr textContainers];
     NSMutableArray *sections = nil;
     NSUInteger layoutOrientation = 0; // horizontal
     NSRange range = NSMakeRange(0, 0);
@@ -708,7 +716,7 @@
         }
         
         if (layoutOrientation > 0) {
-            NSRange containerRange = [layoutMgr characterRangeForGlyphRange:[layoutMgr glyphRangeForTextContainer:container] actualGlyphRange:NULL];
+            NSRange containerRange = [_layoutMgr characterRangeForGlyphRange:[_layoutMgr glyphRangeForTextContainer:container] actualGlyphRange:NULL];
             
             if (range.length == 0) {
                 range = containerRange;
@@ -806,7 +814,7 @@
 - (void)toggleLayoutOrientation:(id)sender {
     NSInteger tag = [sender tag];
 
-    if (hasMultiplePages) {
+    if (_hasMultiplePages) {
         NSUInteger count = [[[self layoutManager] textContainers] count];
 
         while (count-- > 1) [self removePage]; // remove 2nd ~ nth pages
@@ -824,7 +832,7 @@
 /* Window delegation messages */
 
 - (NSRect)windowWillUseStandardFrame:(NSWindow *)window defaultFrame:(NSRect)defaultFrame {
-    if (!hasMultiplePages) {	// If not wrap-to-page, use the default suggested
+    if (!_hasMultiplePages) {	// If not wrap-to-page, use the default suggested
         return defaultFrame;
     } else {
         NSRect currentFrame = [window frame];	// Get the current size and location of the window
@@ -834,7 +842,7 @@
 	
         // Get a frame for the window content, which is a scrollView
         newScrollView.origin = NSZeroPoint;
-        newScrollView.size = [[scrollView class] frameSizeForContentSize:paperSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy];
+        newScrollView.size = [[_scrollView class] frameSizeForContentSize:paperSize horizontalScrollerClass:[_scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[_scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[_scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy];
 	
         // The standard frame for the window is now the frame that will fit the scrollView content
         standardFrame.size = [[window class] frameRectForContentRect:newScrollView styleMask:[window styleMask]].size;
@@ -850,15 +858,15 @@
 - (void)windowDidResize:(NSNotification *)notification {
     [[self document] setTransient:NO]; // Since the user has taken an interest in the window, clear the document's transient status
     
-    if (!isSettingSize) {   // There is potential for recursion, but typically this is prevented in NSWindow which doesn't call this method if the frame doesn't change. However, just in case...
-	isSettingSize = YES;
-	NSSize viewSize = [[scrollView class] contentSizeForFrameSize:[scrollView frame].size horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:[NSScroller preferredScrollerStyle]];
+    if (!_isSettingSize) {   // There is potential for recursion, but typically this is prevented in NSWindow which doesn't call this method if the frame doesn't change. However, just in case...
+	_isSettingSize = YES;
+	NSSize viewSize = [[_scrollView class] contentSizeForFrameSize:[_scrollView frame].size horizontalScrollerClass:[_scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[_scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[_scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:[NSScroller preferredScrollerStyle]];
 	
 	if (![[self document] hasMultiplePages]) {
 	    viewSize.width -= (defaultTextPadding() * 2.0);
 	}
 	[[self document] setViewSize:viewSize];
-	isSettingSize = NO;
+	_isSettingSize = NO;
     }
 }
 
@@ -963,8 +971,8 @@
 /* Layout manager delegation message */
 
 - (void)layoutManager:(NSLayoutManager *)layoutManager didCompleteLayoutForTextContainer:(NSTextContainer *)textContainer atEnd:(BOOL)layoutFinishedFlag {
-    if (hasMultiplePages) {
-        MultiplePageView *pagesView = [scrollView documentView];
+    if (_hasMultiplePages) {
+        MultiplePageView *pagesView = [_scrollView documentView];
         NSArray *containers = [layoutManager textContainers];
 	
         if (!layoutFinishedFlag || (textContainer == nil)) {
@@ -1028,7 +1036,7 @@
 
 - (NSMenu *)textView:(NSTextView *)view menu:(NSMenu *)menu forEvent:(NSEvent *)event atIndex:(NSUInteger)charIndex {
     // Removing layout orientation menu item in multipage mode for enforcing the document-wide setting
-    if (hasMultiplePages) {
+    if (_hasMultiplePages) {
         [[menu itemArray] enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
             BOOL remove = NO;
             if ([obj action] == @selector(changeLayoutOrientation:)) {

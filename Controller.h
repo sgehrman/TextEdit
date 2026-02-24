@@ -14,14 +14,10 @@
 
 @class Preferences, DocumentPropertiesPanelController, LinePanelController;
 
-@interface Controller : NSObject {
-    IBOutlet Preferences *preferencesController;
-    IBOutlet DocumentPropertiesPanelController *propertiesController;
-    IBOutlet LinePanelController *lineController;
-}
+@interface Controller : NSObject
 
-@property (strong) Preferences *preferencesController;
-@property (strong) DocumentPropertiesPanelController *propertiesController;
-@property (strong) LinePanelController *lineController;
+@property (nonatomic, strong) IBOutlet Preferences *preferencesController;
+@property (nonatomic, strong) IBOutlet DocumentPropertiesPanelController *propertiesController;
+@property (nonatomic, strong) IBOutlet LinePanelController *lineController;
 
 @end

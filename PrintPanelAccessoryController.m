@@ -15,8 +15,6 @@
 
 @implementation PrintPanelAccessoryController
 
-@synthesize showsWrappingToFit, wrappingToFit;
-
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
     // We override the designated initializer, ignoring the nib since we need our own
     return [super initWithNibName:@"PrintPanelAccessory" bundle:nibBundleOrNil];

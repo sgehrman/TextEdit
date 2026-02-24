@@ -16,12 +16,7 @@
 /* An instance of this subclass is created in the main nib file. */
 
 // NSDocumentController is subclassed to provide for modification of the open panel. Normally, there is no need to subclass the document controller.
-@interface DocumentController : NSDocumentController {
-    NSMutableDictionary *customOpenSettings;	    // Mapping of document URLs to encoding, ignore HTML, and ignore rich text settings that override the defaults from Preferences
-    NSMutableArray *deferredDocuments;
-    NSLock *transientDocumentLock;
-    NSLock *displayDocumentLock;
-}
+@interface DocumentController : NSDocumentController
 
 + (NSView *)encodingAccessory:(NSUInteger)encoding includeDefaultEntry:(BOOL)includeDefaultItem encodingPopUp:(NSPopUpButton **)popup checkBox:(NSButton **)button;
 

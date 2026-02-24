@@ -17,10 +17,7 @@
 #import <Cocoa/Cocoa.h>
 
 
-@interface DocumentPropertiesPanelController : NSWindowController {
-    IBOutlet id documentObjectController;
-    id inspectedDocument;
-}
+@interface DocumentPropertiesPanelController : NSWindowController
 
 - (IBAction)toggleWindow:(id)sender;
 

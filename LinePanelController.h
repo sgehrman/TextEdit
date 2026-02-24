@@ -13,9 +13,7 @@
 #import <Cocoa/Cocoa.h>
 
 
-@interface LinePanelController : NSWindowController {
-    IBOutlet NSTextField *lineField;
-}
+@interface LinePanelController : NSWindowController
 
 - (IBAction)lineFieldChanged:(id)sender;
 - (IBAction)selectClicked:(id)sender;

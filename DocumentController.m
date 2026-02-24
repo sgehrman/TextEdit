@@ -17,26 +17,31 @@
 #import "TextEditDefaultsKeys.h"
 #import "TextEditErrors.h"
 
-/* A very simple container class which is used to collect the outlets from loading the encoding accessory.  No implementation provided, because all of the references are weak and don't need retain/release.  Would be nice to be able to switch to a mutable dictionary here at some point.
+/* A very simple container class which is used to collect the outlets from loading the encoding accessory.
 */
-@interface OpenSaveAccessoryOwner : NSObject {
-@public
-    IBOutlet NSView *accessoryView;
-    IBOutlet NSPopUpButton *encodingPopUp;
-    IBOutlet NSButton *checkBox;
-}
+@interface OpenSaveAccessoryOwner : NSObject
+@property (nonatomic, strong) IBOutlet NSView *accessoryView;
+@property (nonatomic, strong) IBOutlet NSPopUpButton *encodingPopUp;
+@property (nonatomic, strong) IBOutlet NSButton *checkBox;
 @end
 
 @implementation OpenSaveAccessoryOwner
+@end
+
+@interface DocumentController ()
+@property (nonatomic, strong) NSMutableDictionary *customOpenSettings;
+@property (nonatomic, strong) NSMutableArray *deferredDocuments;
+@property (nonatomic, strong) NSLock *transientDocumentLock;
+@property (nonatomic, strong) NSLock *displayDocumentLock;
 @end
 
 @implementation DocumentController
 
 - (void)awakeFromNib {
     [self bind:@"autosavingDelay" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:@"values." AutosavingDelay options:nil];
-    customOpenSettings = [[NSMutableDictionary alloc] init];
-    transientDocumentLock = [[NSLock alloc] init];
-    displayDocumentLock = [[NSLock alloc] init];
+    _customOpenSettings = [[NSMutableDictionary alloc] init];
+    _transientDocumentLock = [[NSLock alloc] init];
+    _displayDocumentLock = [[NSLock alloc] init];
 }
 
 - (void)dealloc {
@@ -73,13 +78,13 @@
         if (docClass != nil) {
             Document *transientDoc = nil;
             
-            [transientDocumentLock lock];
+            [_transientDocumentLock lock];
             transientDoc = [self transientDocumentToReplace];
             if (transientDoc) {
                 // If this document has claimed the transient document, cause -transientDocumentToReplace to return nil for all other documents.
                 [transientDoc setTransient:NO];
             }
-            [transientDocumentLock unlock];
+            [_transientDocumentLock unlock];
             
             id doc = [[docClass alloc] initWithType:type error:error];
             if (!doc) return nil; // error has been set
@@ -174,19 +179,19 @@
 - (id)openDocumentWithContentsOfURL:(NSURL *)absoluteURL display:(BOOL)displayDocument error:(NSError **)outError {
     Document *transientDoc = nil;
     
-    [transientDocumentLock lock];
+    [_transientDocumentLock lock];
     transientDoc = [self transientDocumentToReplace];
     if (transientDoc) {
         // Once this document has claimed the transient document, cause -transientDocumentToReplace to return nil for all other documents.
         [transientDoc setTransient:NO];
-        deferredDocuments = [[NSMutableArray alloc] init];
+        _deferredDocuments = [[NSMutableArray alloc] init];
     }
-    [transientDocumentLock unlock];
+    [_transientDocumentLock unlock];
     
     // Don't make NSDocumentController display the NSDocument it creates. Instead, do it later manually to ensure that the transient document has been replaced first.
     Document *doc = [super openDocumentWithContentsOfURL:absoluteURL display:NO error:outError];
     
-    [customOpenSettings removeObjectForKey:absoluteURL];
+    [_customOpenSettings removeObjectForKey:absoluteURL];
     
     if (transientDoc) {
         if (doc) {
@@ -195,20 +200,20 @@
         }
         
         // Now that the transient document has been replaced, display all deferred documents.
-        [displayDocumentLock lock];
-        NSArray *documentsToDisplay = deferredDocuments;
-        deferredDocuments = nil;
-        [displayDocumentLock unlock];
+        [_displayDocumentLock lock];
+        NSArray *documentsToDisplay = _deferredDocuments;
+        _deferredDocuments = nil;
+        [_displayDocumentLock unlock];
         for (NSDocument *document in documentsToDisplay) [self displayDocument:document];
     } else if (doc && displayDocument) {
-        [displayDocumentLock lock];
-        if (deferredDocuments) {
+        [_displayDocumentLock lock];
+        if (_deferredDocuments) {
             // Defer displaying this document, because the transient document has not yet been replaced.
-            [deferredDocuments addObject:doc];
-            [displayDocumentLock unlock];
+            [_deferredDocuments addObject:doc];
+            [_displayDocumentLock unlock];
         } else {
             // The transient document has been replaced, so display the document immediately.
-            [displayDocumentLock unlock];
+            [_displayDocumentLock unlock];
             [self displayDocument:doc];
         }
     }
@@ -236,10 +241,10 @@
         NSLog(@"Failed to load EncodingAccessory.nib");
         return nil;
     }
-    if (popup) *popup = owner->encodingPopUp;
-    if (button) *button = owner->checkBox;
-    [[EncodingManager sharedInstance] setupPopUpCell:[owner->encodingPopUp cell] selectedEncoding:encoding withDefaultEntry:includeDefaultItem];
-    return owner->accessoryView;
+    if (popup) *popup = owner.encodingPopUp;
+    if (button) *button = owner.checkBox;
+    [[EncodingManager sharedInstance] setupPopUpCell:[owner.encodingPopUp cell] selectedEncoding:encoding withDefaultEntry:includeDefaultItem];
+    return owner.accessoryView;
 }
 
 /* Overridden to add an accessory view to the open panel. This method is called for both modal and non-modal invocations.
@@ -272,7 +277,7 @@
             }
             NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithUnsignedInteger:encoding], PlainTextEncodingForRead, [NSNumber numberWithBool:ignoreHTML], IgnoreHTML, [NSNumber numberWithBool:ignoreRich], IgnoreRichText, nil];
             for (NSURL *url in [openPanel URLs]) {
-                [customOpenSettings setObject:options forKey:url];
+                [_customOpenSettings setObject:options forKey:url];
             }
         }
         completionHandler(result);
@@ -281,17 +286,17 @@
 }
 
 - (NSStringEncoding)lastSelectedEncodingForURL:(NSURL *)url {
-    NSDictionary *options = [customOpenSettings objectForKey:url];
+    NSDictionary *options = [_customOpenSettings objectForKey:url];
     return options ? [[options objectForKey:PlainTextEncodingForRead] unsignedIntegerValue] : [[[NSUserDefaults standardUserDefaults] objectForKey:PlainTextEncodingForRead] unsignedIntegerValue];
 }
 
 - (BOOL)lastSelectedIgnoreHTMLForURL:(NSURL *)url {
-    NSDictionary *options = [customOpenSettings objectForKey:url];
+    NSDictionary *options = [_customOpenSettings objectForKey:url];
     return options ? [[options objectForKey:IgnoreHTML] unsignedIntegerValue] : [[NSUserDefaults standardUserDefaults] boolForKey:IgnoreHTML];
 }
 
 - (BOOL)lastSelectedIgnoreRichForURL:(NSURL *)url {
-    NSDictionary *options = [customOpenSettings objectForKey:url];
+    NSDictionary *options = [_customOpenSettings objectForKey:url];
     return options ? [[options objectForKey:IgnoreRichText] unsignedIntegerValue] : [[NSUserDefaults standardUserDefaults] boolForKey:IgnoreRichText];
 }
 

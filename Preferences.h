@@ -26,10 +26,7 @@ enum {
 };
 typedef NSInteger HTMLStylingMode;
 
-@interface Preferences : NSWindowController {
-    BOOL changingRTFFont;
-    NSInteger originalDimensionFieldValue;
-}
+@interface Preferences : NSWindowController
 - (IBAction)revertToDefault:(id)sender;    
 
 - (IBAction)changeRichTextFont:(id)sender;	/* Request to change the rich text font */

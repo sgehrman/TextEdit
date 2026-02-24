@@ -18,6 +18,11 @@
 #import "TextEditDefaultsKeys.h"
 #import "Controller.h"
 
+@interface Preferences ()
+@property (nonatomic, assign) BOOL changingRTFFont;
+@property (nonatomic, assign) NSInteger originalDimensionFieldValue;
+@end
+
 @implementation Preferences
 
 - (id)init {
@@ -44,7 +49,7 @@
 - (IBAction)changeRichTextFont:(id)sender {
     // validate whatever's currently being edited first
     if ([[self window] makeFirstResponder:nil]) {
-        changingRTFFont = YES;
+        _changingRTFFont = YES;
         NSFontManager *fontManager = [NSFontManager sharedFontManager];
         [fontManager setSelectedFont:[self richTextFont] isMultiple:NO];
         [fontManager orderFrontFontPanel:self];
@@ -54,7 +59,7 @@
 - (IBAction)changePlainTextFont:(id)sender {
     // validate whatever's currently being edited first
     if ([[self window] makeFirstResponder:nil]) {
-        changingRTFFont = NO;    
+        _changingRTFFont = NO;    
         NSFontManager *fontManager = [NSFontManager sharedFontManager];
         [fontManager setSelectedFont:[self plainTextFont] isMultiple:NO];
         [fontManager orderFrontFontPanel:self];
@@ -62,7 +67,7 @@
 }
 
 - (void)changeFont:(id)fontManager {
-    if (changingRTFFont) {
+    if (_changingRTFFont) {
         [self setRichTextFont:[fontManager convertFont:[self richTextFont]]];
     } else {
         [self setPlainTextFont:[fontManager convertFont:[self plainTextFont]]];
@@ -171,13 +176,13 @@
 #pragma mark *** Window size field delegation ***
 
 - (void)controlTextDidBeginEditing:(NSNotification *)note {
-    originalDimensionFieldValue = [[note object] integerValue];
+    _originalDimensionFieldValue = [[note object] integerValue];
 }
 
 /* Handle the case when the user enters a ridiculous value for the window size. We just set it back to what it started as.
  */
 - (BOOL)control:(NSControl *)control didFailToFormatString:(NSString *)string errorDescription:(NSString *)error {
-    [control setIntegerValue:originalDimensionFieldValue];
+    [control setIntegerValue:_originalDimensionFieldValue];
     return YES;
 }
 
