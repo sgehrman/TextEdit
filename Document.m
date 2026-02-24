@@ -5,51 +5,14 @@
  
   Version: 1.8
  
- Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
- Inc. ("Apple") in consideration of your agreement to the following
- terms, and your use, installation, modification or redistribution of
- this Apple software constitutes acceptance of these terms.  If you do
- not agree with these terms, please do not use, install, modify or
- redistribute this Apple software.
- 
- In consideration of your agreement to abide by the following terms, and
- subject to these terms, Apple grants you a personal, non-exclusive
- license, under Apple's copyrights in this original Apple software (the
- "Apple Software"), to use, reproduce, modify and redistribute the Apple
- Software, with or without modifications, in source and/or binary forms;
- provided that if you redistribute the Apple Software in its entirety and
- without modifications, you must retain this notice and the following
- text and disclaimers in all such redistributions of the Apple Software.
- Neither the name, trademarks, service marks or logos of Apple Inc. may
- be used to endorse or promote products derived from the Apple Software
- without specific prior written permission from Apple.  Except as
- expressly stated in this notice, no other rights or licenses, express or
- implied, are granted by Apple herein, including but not limited to any
- patent rights that may be infringed by your derivative works or by other
- works in which the Apple Software may be incorporated.
- 
- The Apple Software is provided by Apple on an "AS IS" basis.  APPLE
- MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
- THE IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS
- FOR A PARTICULAR PURPOSE, REGARDING THE APPLE SOFTWARE OR ITS USE AND
- OPERATION ALONE OR IN COMBINATION WITH YOUR PRODUCTS.
- 
- IN NO EVENT SHALL APPLE BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL
- OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- INTERRUPTION) ARISING IN ANY WAY OUT OF THE USE, REPRODUCTION,
- MODIFICATION AND/OR DISTRIBUTION OF THE APPLE SOFTWARE, HOWEVER CAUSED
- AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
- STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
- 
- Copyright (C) 2013 Apple Inc. All Rights Reserved.
+
  
  */
 
 
 
 #import <Cocoa/Cocoa.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "EncodingManager.h"
 #import "Document.h"
 #import "DocumentController.h"
@@ -74,7 +37,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 + (BOOL)isRichTextType:(NSString *)typeName {
     /* We map all plain text documents to public.text.  Therefore a document is rich iff its type is not public.text. */
-    return ![typeName isEqualToString:(NSString *)kUTTypeText];
+    return ![typeName isEqualToString:UTTypeText.identifier];
 }
 
 + (NSString *)readableTypeForType:(NSString *)type {
@@ -88,14 +51,13 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
         topologicallySortedReadableTypes = [self readableTypes];
         topologicallySortedReadableTypes = [topologicallySortedReadableTypes sortedArrayUsingComparator:^NSComparisonResult(id type1, id type2) {
             if (type1 == type2) return NSOrderedSame;
-            if (UTTypeConformsTo((CFStringRef)type1, (CFStringRef)type2)) return NSOrderedAscending;
-            if (UTTypeConformsTo((CFStringRef)type2, (CFStringRef)type1)) return NSOrderedDescending;
+            if ([[UTType typeWithIdentifier:type1] conformsToType:[UTType typeWithIdentifier:type2]]) return NSOrderedAscending;
+            if ([[UTType typeWithIdentifier:type2] conformsToType:[UTType typeWithIdentifier:type1]]) return NSOrderedDescending;
             return (((NSUInteger)type1 < (NSUInteger)type2) ? NSOrderedAscending : NSOrderedDescending);
         }];
-        [topologicallySortedReadableTypes retain];
     });
     for (NSString *readableType in topologicallySortedReadableTypes) {
-        if (UTTypeConformsTo((CFStringRef)type, (CFStringRef)readableType)) return readableType;
+        if ([[UTType typeWithIdentifier:type] conformsToType:[UTType typeWithIdentifier:readableType]]) return readableType;
     }
     return nil;
 }
@@ -104,7 +66,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     if ((self = [super init])) {
         [[self undoManager] disableUndoRegistration];
     
-	textStorage = [[NSTextStorage allocWithZone:[self zone]] init];
+	textStorage = [[NSTextStorage alloc] init];
 	
 	[self setBackgroundColor:[NSColor whiteColor]];
 	[self setEncoding:NoStringEncoding];
@@ -136,16 +98,16 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     static dispatch_once_t once = 0; 
     dispatch_once(&once, ^{
 	documentMappings = [[NSDictionary alloc] initWithObjectsAndKeys:
-            (NSString *)kUTTypeText, NSPlainTextDocumentType,
-            (NSString *)kUTTypeRTF, NSRTFTextDocumentType,
-            (NSString *)kUTTypeRTFD, NSRTFDTextDocumentType,
+            UTTypeText.identifier, NSPlainTextDocumentType,
+            UTTypeRTF.identifier, NSRTFTextDocumentType,
+            UTTypeRTFD.identifier, NSRTFDTextDocumentType,
             SimpleTextType, NSMacSimpleTextDocumentType,
-            (NSString *)kUTTypeHTML, NSHTMLTextDocumentType,
+            UTTypeHTML.identifier, NSHTMLTextDocumentType,
 	    Word97Type, NSDocFormatTextDocumentType,
 	    Word2007Type, NSOfficeOpenXMLTextDocumentType,
 	    Word2003XMLType, NSWordMLTextDocumentType,
 	    OpenDocumentTextType, NSOpenDocumentTextDocumentType,
-            (NSString *)kUTTypeWebArchive, NSWebArchiveTextDocumentType,
+            UTTypeWebArchive.identifier, NSWebArchiveTextDocumentType,
 	    nil];
         });
     return documentMappings;
@@ -167,7 +129,6 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     /* generalize the passed-in type to a type we support.  for instance, generalize "public.xml" to "public.txt" */
     typeName = [[self class] readableTypeForType:typeName];
     
-    [fileTypeToSet release];
     fileTypeToSet = nil;
     
     [[self undoManager] disableUndoRegistration];
@@ -179,19 +140,16 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     [self setEncoding:encoding];
     
     // Check type to see if we should load the document as plain. Note that this check isn't always conclusive, which is why we do another check below, after the document has been loaded (and correctly categorized).
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    if ((ignoreRTF && ([workspace type:typeName conformsToType:(NSString *)kUTTypeRTF] || [workspace type:typeName conformsToType:Word2003XMLType])) || (ignoreHTML && [workspace type:typeName conformsToType:(NSString *)kUTTypeHTML]) || [self isOpenedIgnoringRichText]) {
+    if ((ignoreRTF && ([[UTType typeWithIdentifier:typeName] conformsToType:UTTypeRTF] || [[UTType typeWithIdentifier:typeName] conformsToType:[UTType typeWithIdentifier:Word2003XMLType]])) || (ignoreHTML && [[UTType typeWithIdentifier:typeName] conformsToType:UTTypeHTML]) || [self isOpenedIgnoringRichText]) {
         [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption]; // Force plain
-        typeName = (NSString *)kUTTypeText;
+        typeName = UTTypeText.identifier;
         [self setOpenedIgnoringRichText:YES];
     }
     
     [[text mutableString] setString:@""];
     // Remove the layout managers while loading the text; mutableCopy retains the array so the layout managers aren't released
-    NSMutableArray *layoutMgrs = [[text layoutManagers] mutableCopy];
-    NSEnumerator *layoutMgrEnum = [layoutMgrs objectEnumerator];
-    NSLayoutManager *layoutMgr = nil;
-    while ((layoutMgr = [layoutMgrEnum nextObject])) [text removeLayoutManager:layoutMgr];
+    NSArray *layoutMgrs = [[text layoutManagers] copy];
+    for (NSLayoutManager *layoutMgr in layoutMgrs) [text removeLayoutManager:layoutMgr];
     
     // We can do this loop twice, if the document is loaded as rich text although the user requested plain
     BOOL retry;
@@ -206,9 +164,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
     if (!success) {
 	    [text endEditing];
-	    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
-	    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
-	    [layoutMgrs release];
+	    for (NSLayoutManager *layoutMgr in layoutMgrs) [text addLayoutManager:layoutMgr];   // Add the layout managers back
 	    return NO;	// return NO on error; outError has already been set
 	}
 	
@@ -219,7 +175,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 	    [text endEditing];
 	    [[text mutableString] setString:@""];
 	    [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption];
-	    typeName = (NSString *)kUTTypeText;
+	    typeName = UTTypeText.identifier;
 	    [self setOpenedIgnoringRichText:YES];
 	    retry = YES;
 	} else {
@@ -227,7 +183,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 	    if (newFileType) {
             typeName = newFileType;
 	    } else {
-            typeName = (NSString *)kUTTypeRTF; // Hmm, a new type in the Cocoa text system. Treat it as rich. ??? Should set the converted flag too?
+            typeName = UTTypeRTF.identifier; // Hmm, a new type in the Cocoa text system. Treat it as rich. ??? Should set the converted flag too?
 	    }
         if (![[self class] isRichTextType:typeName]) [self applyDefaultTextAttributes:NO];
 	    [text endEditing];
@@ -238,9 +194,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     // If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
     fileTypeToSet = [typeName copy];
     
-    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
-    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
-    [layoutMgrs release];
+    for (NSLayoutManager *layoutMgr in layoutMgrs) [text addLayoutManager:layoutMgr];   // Add the layout managers back
     
     val = [docAttrs objectForKey:NSCharacterEncodingDocumentAttribute];
     [self setEncoding:(val ? [val unsignedIntegerValue] : NoStringEncoding)];
@@ -300,8 +254,6 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     
     [self setOriginalOrientationSections:[docAttrs objectForKey:NSTextLayoutSectionsAttribute]];
 
-    [self setUsesScreenFonts:[self isRichText] ? [[docAttrs objectForKey:NSUsesScreenFontsDocumentAttribute] boolValue] : YES];
-
     [[self undoManager] enableUndoRegistration];
     
     return YES;
@@ -309,20 +261,19 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 - (NSDictionary *)defaultTextAttributes:(BOOL)forRichText {
     static NSParagraphStyle *defaultRichParaStyle = nil;
-    NSMutableDictionary *textAttributes = [[[NSMutableDictionary alloc] initWithCapacity:2] autorelease];
+    NSMutableDictionary *textAttributes = [[NSMutableDictionary alloc] initWithCapacity:2];
     if (forRichText) {
 	[textAttributes setObject:[NSFont userFontOfSize:0.0] forKey:NSFontAttributeName];
 	if (defaultRichParaStyle == nil) {	// We do this once...
 	    NSInteger cnt;
             NSString *measurementUnits = [[NSUserDefaults standardUserDefaults] objectForKey:@"AppleMeasurementUnits"];
             CGFloat tabInterval = ([@"Centimeters" isEqual:measurementUnits]) ? (72.0 / 2.54) : (72.0 / 2.0);  // Every cm or half inch
-	    NSMutableParagraphStyle *paraStyle = [[[NSMutableParagraphStyle alloc] init] autorelease];
-            NSTextTabType type = ((NSWritingDirectionRightToLeft == [NSParagraphStyle defaultWritingDirectionForLanguage:nil]) ? NSRightTabStopType : NSLeftTabStopType);
+	    NSMutableParagraphStyle *paraStyle = [[NSMutableParagraphStyle alloc] init];
+            NSTextAlignment alignment = ((NSWritingDirectionRightToLeft == [NSParagraphStyle defaultWritingDirectionForLanguage:nil]) ? NSTextAlignmentRight : NSTextAlignmentLeft);
 	    [paraStyle setTabStops:[NSArray array]];	// This first clears all tab stops
 	    for (cnt = 0; cnt < 12; cnt++) {	// Add 12 tab stops, at desired intervals...
-                NSTextTab *tabStop = [[NSTextTab alloc] initWithType:type location:tabInterval * (cnt + 1)];
+                NSTextTab *tabStop = [[NSTextTab alloc] initWithTextAlignment:alignment location:tabInterval * (cnt + 1) options:@{}];
 		[paraStyle addTabStop:tabStop];
-	 	[tabStop release];
 	    }
 	    defaultRichParaStyle = [paraStyle copy];
 	}
@@ -333,17 +284,15 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 	NSInteger tabWidth = [[NSUserDefaults standardUserDefaults] integerForKey:TabWidth];
 	CGFloat charWidth;
 
-        if ([self usesScreenFonts]) charWidthFont = [plainFont screenFontWithRenderingMode:NSFontDefaultRenderingMode];
-
         charWidth = [@" " sizeWithAttributes:[NSDictionary dictionaryWithObject:charWidthFont forKey:NSFontAttributeName]].width;
         if (charWidth == 0) charWidth = [charWidthFont maximumAdvancement].width;
-	
+
 	// Now use a default paragraph style, but with the tab width adjusted
-	NSMutableParagraphStyle *mStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
+	NSMutableParagraphStyle *mStyle = [[NSParagraphStyle defaultParagraphStyle] mutableCopy];
 	[mStyle setTabStops:[NSArray array]];
 	[mStyle setDefaultTabInterval:(charWidth * tabWidth)];
-        [textAttributes setObject:[[mStyle copy] autorelease] forKey:NSParagraphStyleAttributeName];
-	
+        [textAttributes setObject:[mStyle copy] forKey:NSParagraphStyleAttributeName];
+
 	// Also set the font
 	[textAttributes setObject:plainFont forKey:NSFontAttributeName];
     }
@@ -358,10 +307,8 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
         NSWritingDirection writingDirection = paragraphStyle ? [(NSParagraphStyle *)paragraphStyle baseWritingDirection] : NSWritingDirectionNatural;
         // We also preserve NSWritingDirectionAttributeName (new in 10.6)
         [text enumerateAttribute:NSWritingDirectionAttributeName inRange:paragraphStyleRange options:0 usingBlock:^(id value, NSRange attributeRange, BOOL *stop){
-            [value retain];
             [text setAttributes:textAttributes range:attributeRange];
             if (value) [text addAttribute:NSWritingDirectionAttributeName value:value range:attributeRange];
-            [value release];
         }];
         if (writingDirection != NSWritingDirectionNatural) [text setBaseWritingDirection:writingDirection range:paragraphStyleRange];
     }];
@@ -385,23 +332,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 /* Clear the delegates of the text views and window, then release all resources and go away...
 */
-- (void)dealloc {
-    [textStorage release];
-    [backgroundColor release];
-    
-    [author release];
-    [comment release];
-    [subject release];
-    [title release];
-    [keywords release];
-    [copyright release];
-    
-    [fileTypeToSet release];
-
-    [originalOrientationSections release];
-    [saveOperationTypeLock release];
-    [super dealloc];
-}
+/* dealloc not needed under ARC */
 
 - (CGFloat)scaleFactor {
     return scaleFactor;
@@ -428,9 +359,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 }
 
 - (void)setBackgroundColor:(NSColor *)color {
-    id oldCol = backgroundColor;
     backgroundColor = [color copy];
-    [oldCol release];
 }
 
 - (NSColor *)backgroundColor {
@@ -451,13 +380,11 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 	NSPrintInfo *newPrintInfo = [oldPrintInfo copy];
 	[newPrintInfo setPaperSize:size];
 	[self setPrintInfo:newPrintInfo];
-	[newPrintInfo release];
     }
 }
 
 /* Layout orientation sections */
 - (void)setOriginalOrientationSections:(NSArray *)array {
-    [originalOrientationSections release];
     originalOrientationSections = [array copy];
 }
 
@@ -549,7 +476,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 - (void)setFileType:(NSString *)type {
     /* Due to sandboxing, we cannot (usefully) directly change the document's file URL except for changing it to nil.  This means that when we convert a document from rich text to plain text, our only way of updating the file URL is to have NSDocument do it for us in response to a change in our file type.  However, it is not as simple as setting our type to kUTTypeText, as would be accurate, because if we have a rtf document, public.rtf inherits from public.text and so NSDocument wouldn't change our extension (which is correct, BTW, since it's also perfectly valid to open a rtf and not interpret the rtf commands, in which case a save of a rtf document as kUTTypeText should not change the extension).  Therefore we need to save using a subtype of kUTTypeText that isn't in the path from kUTTypeText to kUTTypeRTF.  The obvious candidate is kUTTypePlainText.  Therefore, we need to save using kUTTypePlainText when we convert a rtf to plain text and then map the file type from kTTypePlainText to kUTTypeText.  The inverse of the mapping occurs here. */
-    if ([type isEqualToString:(NSString *)kUTTypePlainText]) type = (NSString *)kUTTypeText;
+    if ([type isEqualToString:UTTypePlainText.identifier]) type = UTTypeText.identifier;
     [super setFileType:type];
 }
 
@@ -633,30 +560,28 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 
 - (NSPrintOperation *)printOperationWithSettings:(NSDictionary *)printSettings error:(NSError **)outError {
-    NSPrintInfo *tempPrintInfo = [[[self printInfo] copy] autorelease];
+    NSPrintInfo *tempPrintInfo = [[self printInfo] copy];
     [[tempPrintInfo dictionary] addEntriesFromDictionary:printSettings];
-    
+
     BOOL multiPage = [self hasMultiplePages];
-    
+
     if ([[self windowControllers] count] == 0) [self makeWindowControllers];
     NSView *documentView = [[[self windowControllers] objectAtIndex:0] documentView];
-    
+
     id printingView;
     if (multiPage) {    // If already in multiple-page ("wrap-to-page") mode, we simply use the display view for printing
         printingView = documentView;
         [[[[self windowControllers] objectAtIndex:0] firstTextView] textEditDoForegroundLayoutToCharacterIndex:NSIntegerMax];		// Make sure the whole document is laid out before printing
     } else {            // Otherwise we create a new text view (along with a text container and layout manager)
-        printingView = [[[PrintingTextView alloc] init] autorelease];   // PrintingTextView is a simple subclass of NSTextView. Creating the view this way creates rest of the text system, which it will release when dealloc'ed (since the print panel will be releasing this, we want to hand off the responsibility of release everything)
-        NSLayoutManager *layoutManager = [[[[printingView textContainer] layoutManager] retain] autorelease];
+        printingView = [[PrintingTextView alloc] init];
+        NSLayoutManager *layoutManager = [[printingView textContainer] layoutManager];
         NSTextStorage *unnecessaryTextStorage = [layoutManager textStorage];  // We don't want the text storage, since we will use the one we have
         [unnecessaryTextStorage removeLayoutManager:layoutManager];
-        [unnecessaryTextStorage release];
         [textStorage addLayoutManager:layoutManager];
-        [textStorage retain];   // Since later release of the printingView will release the textStorage as well
         [printingView setLayoutOrientation:[[[[self windowControllers] objectAtIndex:0] firstTextView] layoutOrientation]];
     }
-    
-    PrintPanelAccessoryController *accessoryController = [[[PrintPanelAccessoryController alloc] init] autorelease];
+
+    PrintPanelAccessoryController *accessoryController = [[PrintPanelAccessoryController alloc] init];
     NSPrintOperation *op = [NSPrintOperation printOperationWithView:printingView printInfo:tempPrintInfo];
     [op setShowsPrintPanel:YES];
     [op setShowsProgressPanel:YES];
@@ -682,7 +607,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     NSPrintInfo *printInfo = [super printInfo];
     if (!setUpPrintInfoDefaults) {
 	setUpPrintInfoDefaults = YES;
-	[printInfo setHorizontalPagination:NSFitPagination];
+	[printInfo setHorizontalPagination:NSPrintingPaginationModeFit];
 	[printInfo setHorizontallyCentered:NO];
 	[printInfo setVerticallyCentered:NO];
 	[printInfo setLeftMargin:72.0];
@@ -739,7 +664,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 - (void)appendPlainTextExtensionChanged:(id)sender {
     NSSavePanel *panel = (NSSavePanel *)[sender window];
     [panel setAllowsOtherFileTypes:[sender state]];
-    [panel setAllowedFileTypes:[sender state] ? [NSArray arrayWithObject:(NSString *)kUTTypePlainText] : nil];
+    [panel setAllowedContentTypes:[sender state] ? @[UTTypePlainText] : @[]];
 }
 
 - (void)encodingPopupChanged:(NSPopUpButton *)popup {
@@ -753,12 +678,12 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 void validateToggleItem(NSMenuItem *aCell, BOOL useFirst, NSString *first, NSString *second) {
     if (useFirst) {
         if ([aCell tag] != TagForFirst) {
-            [aCell setTitleWithMnemonic:first];
+            [aCell setTitle:first];
             [aCell setTag:TagForFirst];
         }
     } else {
         if ([aCell tag] != TagForSecond) {
-            [aCell setTitleWithMnemonic:second];
+            [aCell setTitle:second];
             [aCell setTag:TagForSecond];
         }
     }
@@ -789,7 +714,6 @@ void validateToggleItem(NSMenuItem *aCell, BOOL useFirst, NSString *first, NSStr
     // Warning, undo support can eat a lot of memory if a long text is changed frequently
     NSAttributedString *textStorageCopy = [[self textStorage] copy];
     [[self undoManager] registerUndoWithTarget:self selector:@selector(setTextStorage:) object:textStorageCopy];
-    [textStorageCopy release];
 
     // ts can actually be a string or an attributed string.
     if ([ts isKindOfClass:[NSAttributedString class]]) {
@@ -804,7 +728,6 @@ void validateToggleItem(NSMenuItem *aCell, BOOL useFirst, NSString *first, NSStr
     if (success) {
         if (fileTypeToSet) {	// If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
             [self setFileType:fileTypeToSet];
-            [fileTypeToSet release];
             fileTypeToSet = nil;
         }
         [self setHasMultiplePages:hasMultiplePages];
@@ -829,7 +752,6 @@ CGFloat defaultTextPadding(void) {
     if (padding < 0.0) {
         NSTextContainer *container = [[NSTextContainer alloc] init];
         padding = [container lineFragmentPadding];
-        [container release];
     }
     return padding;
 }
@@ -841,8 +763,7 @@ CGFloat defaultTextPadding(void) {
 }
 
 + (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName {
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    return !([workspace type:typeName conformsToType:(NSString *)kUTTypeHTML] || [workspace type:typeName conformsToType:(NSString *)kUTTypeWebArchive]);
+    return !([[UTType typeWithIdentifier:typeName] conformsToType:UTTypeHTML] || [[UTType typeWithIdentifier:typeName] conformsToType:UTTypeWebArchive]);
 }
 
 - (void)makeWindowControllers {
@@ -850,24 +771,24 @@ CGFloat defaultTextPadding(void) {
     
     // If this document displaced a transient document, it will already have been assigned a window controller. If that is not the case, create one.
     if ([myControllers count] == 0) {
-        [self addWindowController:[[[DocumentWindowController allocWithZone:[self zone]] init] autorelease]];
+        [self addWindowController:[[DocumentWindowController alloc] init]];
     }
 }
 
 /* One of the determinants of whether a file is locked is whether its type is one of our writable types. However, the writable types are a function of whether the document contains attachments. But whether we are locked cannot be a function of whether the document contains attachments, because we won't be asked to redetermine autosaving safety after an undo operation resulting from a cancel, so the document would continue to appear locked if an image were dragged in and then cancel was pressed.  Therefore, we must use an "ignoreTemporary" boolean to treat RTF as temporarily writable despite the attachments.  That's fine since -checkAutosavingSafetyAfterChangeAndReturnError: will perform this check again with ignoreTemporary set to NO, and that method will be called when the operation is done and undone, so no inconsistency results. 
 */
 - (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary {
-    NSMutableArray *outArray = [[[[self class] writableTypes] mutableCopy] autorelease];
+    NSMutableArray *outArray = [[[self class] writableTypes] mutableCopy];
     if (saveOperation == NSSaveAsOperation) {
 	// Rich-text documents cannot be saved as plain text.
 	if ([self isRichText]) {
-	    [outArray removeObject:(NSString *)kUTTypeText];
-	    [outArray removeObject:(NSString *)kUTTypePlainText];
+	    [outArray removeObject:UTTypeText.identifier];
+	    [outArray removeObject:UTTypePlainText.identifier];
 	}
-	
+
 	// Documents that contain attachments can only be saved in formats that support embedded graphics.
 	if (!ignoreTemporary && [textStorage containsAttachments]) {
-	    [outArray setArray:[NSArray arrayWithObjects:(NSString *)kUTTypeRTFD, (NSString *)kUTTypeWebArchive, nil]];
+	    [outArray setArray:[NSArray arrayWithObjects:UTTypeRTFD.identifier, UTTypeWebArchive.identifier, nil]];
 	}
     }
     return outArray;
@@ -879,7 +800,7 @@ CGFloat defaultTextPadding(void) {
 
 - (NSString *)fileNameExtensionForType:(NSString *)inTypeName saveOperation:(NSSaveOperationType)inSaveOperation {
     /* We use kUTTypeText as our plain text type.  However, kUTTypeText is really a class of types and therefore contains no preferred extension.  Therefore we must specify a preferred extension, that of kUTTypePlainText. */
-    if ([inTypeName isEqualToString:(NSString *)kUTTypeText]) return @"txt";
+    if ([inTypeName isEqualToString:UTTypeText.identifier]) return @"txt";
     return [super fileNameExtensionForType:inTypeName saveOperation:inSaveOperation];
 }
 
@@ -894,7 +815,7 @@ In addition we overwrite this method as a way to tell that the document has been
     [[self windowControllers] makeObjectsPerformSelector:@selector(breakUndoCoalescing)];
 	[saveOperationTypeLock lock];
     currentSaveOperation = saveOperation;
-	handler = [Block_copy(handler) autorelease];
+	handler = [handler copy];
     [super saveToURL:absoluteURL ofType:typeName forSaveOperation:saveOperation completionHandler:^(NSError *error) {
             [self setEncodingForSaving:NoStringEncoding];   // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
         [saveOperationTypeLock unlock];
@@ -1017,7 +938,7 @@ In addition we overwrite this method as a way to tell that the document has been
         // If we don't do this, we won't be able to store images in autosaved untitled documents.
         if (![self fileURL]) {
             if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]]) {
-                [self setFileType:(NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF)];
+                [self setFileType:([textStorage containsAttachments] ? UTTypeRTFD.identifier : UTTypeRTF.identifier)];
             }
         } else if (![self checkAutosavingSafetyAfterChangeAndReturnError:&error]) {
             void (^didRecoverBlock)(BOOL) = ^(BOOL didRecover) {
@@ -1032,20 +953,21 @@ In addition we overwrite this method as a way to tell that the document has been
             NSWindow *sheetWindow = [self windowForSheet];
             if (sheetWindow) {
                 [self performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)()) {
+                void (^recoveryBlock)(BOOL) = ^(BOOL didRecover) {
+                    if (!didRecover) {
+                        if (change == NSChangeDone || change == NSChangeRedone) {
+                            [[self undoManager] undo];
+                        } else if (change == NSChangeUndone) {
+                            [[self undoManager] redo];
+                        }
+                    }
+                    activityCompletionHandler();
+                };
                 [self presentError:error
                         modalForWindow:sheetWindow
                         delegate:self
                         didPresentSelector:@selector(didPresentErrorWithRecovery:block:)
-                           contextInfo:Block_copy(^(BOOL didRecover) {
-                               if (!didRecover) {
-                                   if (change == NSChangeDone || change == NSChangeRedone) {
-                                       [[self undoManager] undo];
-                                   } else if (change == NSChangeUndone) {
-                                       [[self undoManager] redo];
-                                   }
-                               }
-                               activityCompletionHandler();
-                           })];
+                           contextInfo:(__bridge_retained void *)recoveryBlock];
                 }];
             } else {
                 didRecoverBlock([self presentError:error]);
@@ -1057,7 +979,7 @@ In addition we overwrite this method as a way to tell that the document has been
 - (NSString *)autosavingFileType {
     if (inDuplicate) {
         if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]])
-            return (NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF);
+            return ([textStorage containsAttachments] ? UTTypeRTFD.identifier : UTTypeRTF.identifier);
     }
     return [super autosavingFileType];
 }
@@ -1074,14 +996,14 @@ In addition we overwrite this method as a way to tell that the document has been
     return result;
 }
 
-- (void)document:(NSDocument *)ignored didSave:(BOOL)didSave block:(void (^)(BOOL))block {
+- (void)document:(NSDocument *)ignored didSave:(BOOL)didSave block:(void *)blockPtr {
+    void (^block)(BOOL) = (__bridge_transfer id)blockPtr;
     block(didSave);
-    Block_release(block);
 }
 
-- (void)didPresentErrorWithRecovery:(BOOL)didRecover block:(void (^)(BOOL))block {
+- (void)didPresentErrorWithRecovery:(BOOL)didRecover block:(void *)blockPtr {
+    void (^block)(BOOL) = (__bridge_transfer id)blockPtr;
     block(didRecover);
-    Block_release(block);
 }
 
 - (void)attemptRecoveryFromError:(NSError *)error optionIndex:(NSUInteger)recoveryOptionIndex delegate:(id)delegate didRecoverSelector:(SEL)didRecoverSelector contextInfo:(void *)contextInfo {
@@ -1101,15 +1023,14 @@ In addition we overwrite this method as a way to tell that the document has been
                     if (!duplicateDocument) {
                         NSWindow *sheetWindow = [self windowForSheet];
                         if (sheetWindow) {
-                            [delegate retain];
+                            void (^recoveryBlock)(BOOL) = ^(BOOL didRecover) {
+                                ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, NO, contextInfo);
+                            };
                             [self presentError:duplicateError
                                     modalForWindow:sheetWindow
                                     delegate:self
                                     didPresentSelector:@selector(didPresentErrorWithRecovery:block:)
-                                    contextInfo:Block_copy(^(BOOL didRecover) {
-                                        [delegate release];
-                                        ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, NO, contextInfo);
-                                    })];
+                                    contextInfo:(__bridge_retained void *)recoveryBlock];
                             return;
                         } else {
                             [self presentError:duplicateError];
@@ -1119,7 +1040,7 @@ In addition we overwrite this method as a way to tell that the document has been
                 } else if (((errorCode == TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 2)) ||
                     ((errorCode != TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 0))) {
                     if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]])
-                        [self setFileType:(NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF)];
+                        [self setFileType:([textStorage containsAttachments] ? UTTypeRTFD.identifier : UTTypeRTF.identifier)];
                     [self setConverted:NO];
                     [self setLossy:NO];
                     didRecover = YES;
@@ -1127,15 +1048,14 @@ In addition we overwrite this method as a way to tell that the document has been
                 break;
             case TextEditSaveErrorEncodingInapplicable:
                 if (recoveryOptionIndex == 0) { // OK button
-                    [delegate retain];
                     [self continueActivityUsingBlock:^(void) {
+                    void (^saveBlock)(BOOL) = ^(BOOL didSave) {
+                        ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, didSave, contextInfo);
+                    };
                     [self runModalSavePanelForSaveOperation:NSSaveOperation
                         delegate:self
                         didSaveSelector:@selector(document:didSave:block:)
-                        contextInfo:Block_copy(^(BOOL didSave) {
-                            [delegate release];
-                            ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, didSave, contextInfo);
-                        })];
+                        contextInfo:(__bridge_retained void *)saveBlock];
                     }];
                     return;
                 }
@@ -1162,7 +1082,6 @@ In addition we overwrite this method as a way to tell that the document has been
 	[NSNumber numberWithDouble:[[self printInfo] bottomMargin]], NSBottomMarginDocumentAttribute, 
 	[NSNumber numberWithDouble:[[self printInfo] topMargin]], NSTopMarginDocumentAttribute, 
 	[NSNumber numberWithInteger:[self hasMultiplePages] ? 1 : 0], NSViewModeDocumentAttribute,
-	[NSNumber numberWithBool:[self usesScreenFonts]], NSUsesScreenFontsDocumentAttribute,
 	nil];
     NSString *docType = nil;
     id val = nil; // temporary values
@@ -1173,19 +1092,17 @@ In addition we overwrite this method as a way to tell that the document has been
     }
     
     // TextEdit knows how to save all these types, including their super-types. It does not know how to save any of their potential subtypes. Hence, the conformance check is the reverse of the usual pattern.
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    // kUTTypePlainText also handles kUTTypeText and has to come before the other types so we will use the least specialized type
-    // For example, kUTTypeText is an ancestor of kUTTypeText and kUTTypeRTF but we should use kUTTypeText because kUTTypeText is an ancestor of kUTTypeRTF.
-    if ([workspace type:(NSString *)kUTTypePlainText conformsToType:typeName]) docType = NSPlainTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeRTF conformsToType:typeName]) docType = NSRTFTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeRTFD conformsToType:typeName]) docType = NSRTFDTextDocumentType;
-    else if ([workspace type:SimpleTextType conformsToType:typeName]) docType = NSMacSimpleTextDocumentType;
-    else if ([workspace type:Word97Type conformsToType:typeName]) docType = NSDocFormatTextDocumentType;
-    else if ([workspace type:Word2007Type conformsToType:typeName]) docType = NSOfficeOpenXMLTextDocumentType;
-    else if ([workspace type:Word2003XMLType conformsToType:typeName]) docType = NSWordMLTextDocumentType;
-    else if ([workspace type:OpenDocumentTextType conformsToType:typeName]) docType = NSOpenDocumentTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeHTML conformsToType:typeName]) docType = NSHTMLTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeWebArchive conformsToType:typeName]) docType = NSWebArchiveTextDocumentType;
+    // UTTypePlainText also handles UTTypeText and has to come before the other types so we will use the least specialized type
+    if ([UTTypePlainText conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSPlainTextDocumentType;
+    else if ([UTTypeRTF conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSRTFTextDocumentType;
+    else if ([UTTypeRTFD conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSRTFDTextDocumentType;
+    else if ([[UTType typeWithIdentifier:SimpleTextType] conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSMacSimpleTextDocumentType;
+    else if ([[UTType typeWithIdentifier:Word97Type] conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSDocFormatTextDocumentType;
+    else if ([[UTType typeWithIdentifier:Word2007Type] conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSOfficeOpenXMLTextDocumentType;
+    else if ([[UTType typeWithIdentifier:Word2003XMLType] conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSWordMLTextDocumentType;
+    else if ([[UTType typeWithIdentifier:OpenDocumentTextType] conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSOpenDocumentTextDocumentType;
+    else if ([UTTypeHTML conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSHTMLTextDocumentType;
+    else if ([UTTypeWebArchive conformsToType:[UTType typeWithIdentifier:typeName]]) docType = NSWebArchiveTextDocumentType;
     else [NSException raise:NSInvalidArgumentException format:@"%@ is not a recognized document type.", typeName];
     
     if (docType) [dict setObject:docType forKey:NSDocumentTypeDocumentAttribute];
@@ -1233,7 +1150,7 @@ In addition we overwrite this method as a way to tell that the document has been
     } else {
     	NSData *data = [text dataFromRange:range documentAttributes:dict error:outError]; // returns NSData
 	if (data) {
-	    result = [[[NSFileWrapper alloc] initRegularFileWithContents:data] autorelease];
+	    result = [[NSFileWrapper alloc] initRegularFileWithContents:data];
 	    if (!result && outError) *outError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];    // Unlikely, but just in case we should generate an NSError
         }
     }
@@ -1292,12 +1209,12 @@ In addition we overwrite this method as a way to tell that the document has been
 	[extCheckbox setAction:@selector(appendPlainTextExtensionChanged:)];
 	[extCheckbox setTarget:self];
 	if (addExt) {
-	    [savePanel setAllowedFileTypes:[NSArray arrayWithObject:(NSString *)kUTTypePlainText]];
+	    [savePanel setAllowedContentTypes:@[UTTypePlainText]];
 	    [savePanel setAllowsOtherFileTypes:YES];
 	} else {
             // NSDocument defaults to setting the allowedFileType to kUTTypePlainText, which gives the fileName a ".txt" extension. We want don't want to append the extension for Untitled documents.
             // First we clear out the allowedFileType that NSDocument set. We want to allow anything, so we pass 'nil'. This will prevent NSSavePanel from appending an extension.
-            [savePanel setAllowedFileTypes:nil];
+            [savePanel setAllowedContentTypes:@[]];
             // If this document was previously saved, use the URL's name.
             NSString *fileName;
             BOOL gotFileName = [[self fileURL] getResourceValue:&fileName forKey:NSURLNameKey error:nil];

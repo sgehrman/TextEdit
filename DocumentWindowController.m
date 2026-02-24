@@ -5,48 +5,11 @@
  
   Version: 1.8
  
- Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
- Inc. ("Apple") in consideration of your agreement to the following
- terms, and your use, installation, modification or redistribution of
- this Apple software constitutes acceptance of these terms.  If you do
- not agree with these terms, please do not use, install, modify or
- redistribute this Apple software.
- 
- In consideration of your agreement to abide by the following terms, and
- subject to these terms, Apple grants you a personal, non-exclusive
- license, under Apple's copyrights in this original Apple software (the
- "Apple Software"), to use, reproduce, modify and redistribute the Apple
- Software, with or without modifications, in source and/or binary forms;
- provided that if you redistribute the Apple Software in its entirety and
- without modifications, you must retain this notice and the following
- text and disclaimers in all such redistributions of the Apple Software.
- Neither the name, trademarks, service marks or logos of Apple Inc. may
- be used to endorse or promote products derived from the Apple Software
- without specific prior written permission from Apple.  Except as
- expressly stated in this notice, no other rights or licenses, express or
- implied, are granted by Apple herein, including but not limited to any
- patent rights that may be infringed by your derivative works or by other
- works in which the Apple Software may be incorporated.
- 
- The Apple Software is provided by Apple on an "AS IS" basis.  APPLE
- MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
- THE IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS
- FOR A PARTICULAR PURPOSE, REGARDING THE APPLE SOFTWARE OR ITS USE AND
- OPERATION ALONE OR IN COMBINATION WITH YOUR PRODUCTS.
- 
- IN NO EVENT SHALL APPLE BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL
- OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- INTERRUPTION) ARISING IN ANY WAY OUT OF THE USE, REPRODUCTION,
- MODIFICATION AND/OR DISTRIBUTION OF THE APPLE SOFTWARE, HOWEVER CAUSED
- AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
- STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
- 
- Copyright (C) 2013 Apple Inc. All Rights Reserved.
+
  
  */
 
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "DocumentWindowController.h"
 #import "Document.h"
 #import "MultiplePageView.h"
@@ -86,7 +49,7 @@
 
 - (id)init {
     if (self = [super initWithWindowNibName:@"DocumentWindow"]) {
-	layoutMgr = [[NSLayoutManager allocWithZone:[self zone]] init];
+	layoutMgr = [[NSLayoutManager alloc] init];
 	[layoutMgr setDelegate:self];
 	[layoutMgr setAllowsNonContiguousLayout:YES];
     }
@@ -95,17 +58,14 @@
 
 - (void)dealloc {
     if ([self document]) [self setDocument:nil];
-    
+
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    
+
     [[self firstTextView] removeObserver:self forKeyPath:@"backgroundColor"];
     [scrollView removeObserver:self forKeyPath:@"scaleFactor"];
     [[scrollView verticalScroller] removeObserver:self forKeyPath:@"scrollerStyle"];
-    [layoutMgr release];
-    
+
     [self showRulerDelayed:NO];
-    
-    [super dealloc]; // NSWindowController deallocates all the nib objects
 }
 
 /* This method can be called in three different situations (number three is a special TextEdit case):
@@ -116,7 +76,7 @@
    The window can be visible or hidden at the time of the message.
 */
 - (void)setDocument:(Document *)doc {
-    Document *oldDoc = [[self document] retain];
+    Document *oldDoc = [self document];
     
     if (oldDoc) {
         [layoutMgr unbind:@"hyphenationFactor"];
@@ -156,7 +116,6 @@
 	}
     }
     
-    [oldDoc release];
 }
 
 - (void)breakUndoCoalescing {
@@ -243,7 +202,6 @@
     [self updateForRichTextAndRulerState:rich];
     
     [[self firstTextView] setBackgroundColor:[doc backgroundColor]];
-    [[[self firstTextView] layoutManager] setUsesScreenFonts:[doc usesScreenFonts]];
 
     // process the initial container
     if ([sections count] > 0) {
@@ -324,11 +282,6 @@
 /* This method implements panel-based "attach" functionality. Note that as-is, it's set to accept all files; however, by setting allowed types on the open panel it can be restricted to images, etc.
 */
 
-- (void)presenterDidPresent:(BOOL)inDidSucceed soContinue:(void (^)(BOOL didSucceed))inContinuerCopy {
-    inContinuerCopy(inDidSucceed);
-    Block_release(inContinuerCopy);
-}
-
 - (void)chooseAndAttachFiles:(id)sender {
     [[self document] performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)(void)) {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
@@ -336,21 +289,19 @@
     [panel setAllowsMultipleSelection:YES];
     // Use the 10.6-introduced sheet API with block handler
     [panel beginSheetModalForWindow:[self window] completionHandler:^(NSInteger result) {
-	if (result == NSFileHandlingPanelOKButton) {	// Only if not cancelled
+	if (result == NSModalResponseOK) {	// Only if not cancelled
             NSArray *urls = [panel URLs];
 	    NSTextView *textView = [self firstTextView];
 	    NSInteger numberOfErrors = 0;
 	    NSError *error = nil;
 	    NSMutableAttributedString *attachments = [[NSMutableAttributedString alloc] init];
-            
-	    // Process all the attachments, creating an attributed string 
+
+	    // Process all the attachments, creating an attributed string
 	    for (NSURL *url in urls) {
 		NSFileWrapper *wrapper = [[NSFileWrapper alloc] initWithURL:url options:NSFileWrapperReadingImmediate error:&error];
 		if (wrapper) {
 		    NSTextAttachment *attachment = [[NSTextAttachment alloc] initWithFileWrapper:wrapper];
 		    [attachments appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
-		    [wrapper release];
-		    [attachment release];
 		} else {
 		    numberOfErrors++;
 		}
@@ -364,8 +315,7 @@
 		    [textView didChangeText];
 		}
 	    }
-	    [attachments release];
-	    
+
 	    [panel orderOut:nil];   // Strictly speaking not necessary, but if we put up an error sheet, a good idea for the panel to be dismissed first
             
 	    // Deal with errors opening some or all of the attachments
@@ -375,9 +325,10 @@
 		    NSString *description = (numberOfErrors == [urls count]) ? NSLocalizedString(@"None of the items could be attached.", @"Title of alert indicating error during 'Attach Files...' when user tries to attach (insert) multiple files and none can be attached.") : NSLocalizedString(@"Some of the items could not be attached.", @"Title of alert indicating error during 'Attach Files...' when user tries to attach (insert) multiple files and some fail.");
 		    error = [NSError errorWithDomain:TextEditErrorDomain code:TextEditAttachFilesFailure userInfo:[NSDictionary dictionaryWithObjectsAndKeys:description, NSLocalizedDescriptionKey, NSLocalizedString(@"The files may be unreadable, or the volume they are on may be inaccessible. Please check in Finder.", @"Recommendation when 'Attach Files...' command fails"), NSLocalizedRecoverySuggestionErrorKey, nil]];
 		}
-                    [[self window] presentError:error modalForWindow:[self window] delegate:self didPresentSelector:@selector(presenterDidPresent:soContinue:) contextInfo:Block_copy(^(BOOL didSucceed) {
+                    NSAlert *alert = [NSAlert alertWithError:error];
+                    [alert beginSheetModalForWindow:[self window] completionHandler:^(NSModalResponse returnCode) {
                         activityCompletionHandler();
-                    })];
+                    }];
                 } else {
                     activityCompletionHandler();
 	    }
@@ -398,7 +349,6 @@
     if (!rich && rulerIsBeingDisplayed) [self showRulerDelayed:NO];	// Cancel delayed ruler request
     if (rich && ![[self document] isReadOnly]) [self showRulerDelayed:YES];
     [view setImportsGraphics:rich];
-    [[view layoutManager] setUsesScreenFonts:rich ? NO : YES];
 }
 
 - (void)configureTypingAttributesAndDefaultParagraphStyleForTextView:(NSTextView *)view {
@@ -457,12 +407,11 @@
 }
 
 - (void)addPage {
-    NSZone *zone = [self zone];
     NSUInteger numberOfPages = [self numberOfPages];
     MultiplePageView *pagesView = [scrollView documentView];
-    
+
     NSSize textSize = [pagesView documentSizeInPage];
-    NSTextContainer *textContainer = [[NSTextContainer allocWithZone:zone] initWithContainerSize:textSize];
+    NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:textSize];
     NSTextView *textView;
     NSUInteger orientation = [pagesView layoutOrientation];
     NSRect visibleRect = [pagesView visibleRect];
@@ -477,7 +426,24 @@
         [pagesView scrollRectToVisible:visibleRect];
     }
 
-    textView = [[NSTextView allocWithZone:zone] initWithFrame:[pagesView documentRectForPageNumber:numberOfPages] textContainer:textContainer];
+    // Temporarily add the container to the layout manager (with delegate suppressed)
+    // so that initWithFrame:textContainer: can find existing text views through the
+    // layout manager and inherit their NSTextViewSharedData (delegate, ruler support,
+    // font panel, undo, etc.). Without this, each text view creates its own shared
+    // data, and the old shared data can be freed under ARC, causing crashes in ruler
+    // and context menu code that reference it.
+    id savedDelegate = [[self layoutManager] delegate];
+    [[self layoutManager] setDelegate:nil];
+    [[self layoutManager] addTextContainer:textContainer];
+
+    textView = [[NSTextView alloc] initWithFrame:[pagesView documentRectForPageNumber:numberOfPages] textContainer:textContainer];
+
+    // Now remove the container and restore the delegate. We will re-add the container
+    // at the end (its original position) so that addTextContainer: triggers layout
+    // with the delegate active, allowing the normal page creation cascade to work.
+    [[self layoutManager] removeTextContainerAtIndex:[[self layoutManager] textContainers].count - 1];
+    [[self layoutManager] setDelegate:savedDelegate];
+
     [textView setLayoutOrientation:orientation];
     [textView setHorizontallyResizable:NO];
     [textView setVerticallyResizable:NO];
@@ -489,9 +455,6 @@
     [self configureTypingAttributesAndDefaultParagraphStyleForTextView:textView];
     [pagesView addSubview:textView];
     [[self layoutManager] addTextContainer:textContainer];
-
-    [textView release];
-    [textContainer release];
 }
 
 - (void)removePage {
@@ -511,7 +474,6 @@
 
 - (void)setHasMultiplePages:(BOOL)pages force:(BOOL)force {
     NSTextLayoutOrientation orientation = NSTextLayoutOrientationHorizontal;
-    NSZone *zone = [self zone];
     
     if (!force && (hasMultiplePages == pages)) return;
     
@@ -530,7 +492,7 @@
 
     if (hasMultiplePages) {
         NSTextView *textView = [self firstTextView];
-        MultiplePageView *pagesView = [[MultiplePageView allocWithZone:zone] init];
+        MultiplePageView *pagesView = [[MultiplePageView alloc] init];
 	
         [scrollView setDocumentView:pagesView];
 	
@@ -563,12 +525,11 @@
             }
             [pagesView scrollRectToVisible:visRect];
         }
-        [pagesView release];
     } else {
         NSSize size = [scrollView contentSize];
-        NSTextContainer *textContainer = [[NSTextContainer allocWithZone:zone] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
-        NSTextView *textView = [[NSTextView allocWithZone:zone] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height) textContainer:textContainer];
-	
+        NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
+        NSTextView *textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height) textContainer:textContainer];
+
         // Insert the single container as the first container in the layout manager before removing the existing pages in order to preserve the shared view state.
         [[self layoutManager] insertTextContainer:textContainer atIndex:0];
 	
@@ -596,9 +557,6 @@
 
         [scrollView setHasVerticalScroller:YES];
         [scrollView setHasHorizontalScroller:YES];
-
-        [textView release];
-        [textContainer release];
 	
         // Show the selected region
         [[self firstTextView] scrollRangeToVisible:[[self firstTextView] selectedRange]];
@@ -607,11 +565,36 @@
     [scrollView setHasHorizontalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? YES : NO)];
     [scrollView setHasVerticalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? NO : YES)];
 
-    [[self firstTextView] addObserver:self forKeyPath:@"backgroundColor" options:0 context:NULL];
-    [[self firstTextView] bind:@"editable" toObject:self withKeyPath:@"document.readOnly" options:[NSDictionary dictionaryWithObject:NSNegateBooleanTransformerName forKey:NSValueTransformerNameBindingOption]];
-    
-    [[scrollView window] makeFirstResponder:[self firstTextView]];
-    [[scrollView window] setInitialFirstResponder:[self firstTextView]];	// So focus won't be stolen (2934918)
+    // Under ARC, NSTextViewSharedData is not reliably inherited by new text views
+    // created during page mode transitions (the old text view's shared data may be
+    // released before the new text view adopts it). Re-establish shared state on the
+    // new first text view to ensure the delegate, font panel, undo, spell checking,
+    // and other shared properties are correct.
+    NSTextView *newFirstTextView = [self firstTextView];
+    BOOL rich = [[self document] isRichText];
+    [newFirstTextView setDelegate:self];
+    [newFirstTextView setUsesFontPanel:YES];
+    [newFirstTextView setUsesFindBar:YES];
+    [newFirstTextView setIncrementalSearchingEnabled:YES];
+    [newFirstTextView setAllowsUndo:YES];
+    [newFirstTextView setAllowsDocumentBackgroundColorChange:YES];
+    [newFirstTextView setRichText:rich];
+    [newFirstTextView setUsesRuler:rich];
+    [newFirstTextView setImportsGraphics:rich];
+    if (rich && ![[self document] isReadOnly]) {
+        if ([[NSUserDefaults standardUserDefaults] boolForKey:ShowRuler]) [newFirstTextView setRulerVisible:YES];
+        rulerIsBeingDisplayed = YES;
+    }
+
+    [newFirstTextView addObserver:self forKeyPath:@"backgroundColor" options:0 context:NULL];
+    [newFirstTextView bind:@"editable" toObject:self withKeyPath:@"document.readOnly" options:[NSDictionary dictionaryWithObject:NSNegateBooleanTransformerName forKey:NSValueTransformerNameBindingOption]];
+
+    [[scrollView window] makeFirstResponder:newFirstTextView];
+    [[scrollView window] setInitialFirstResponder:newFirstTextView];	// So focus won't be stolen (2934918)
+
+    // Set usesInspectorBar after the text view is first responder so the inspector
+    // bar (formatting toolbar) properly attaches to the window for the new text view.
+    [newFirstTextView setUsesInspectorBar:rich];
 }
 
 /* We override these pair of methods so we can stash away the scrollerStyle, since we want to preserve the size of the document (rather than the size of the window).
@@ -623,7 +606,7 @@
         if (previousScrollerStyle != [NSScroller preferredScrollerStyle] && ! [[self document] hasMultiplePages]) {
             // When we encoded the frame, the window was sized for this saved style. The preferred scroller style has since changed. Given our current frame and the style it had applied, compute how big the view must have been, and then resize ourselves to make the view that size.
             NSSize scrollViewSize = [scrollView frame].size;
-            NSSize previousViewSize = [[scrollView class] contentSizeForFrameSize:scrollViewSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSRegularControlSize scrollerStyle:previousScrollerStyle];
+            NSSize previousViewSize = [[scrollView class] contentSizeForFrameSize:scrollViewSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:previousScrollerStyle];
             previousViewSize.width -= (defaultTextPadding() * 2.0);
             [self resizeWindowForViewSize:previousViewSize];
         }
@@ -647,7 +630,7 @@
         scrollerStyle = NSScrollerStyleLegacy;  // For the wrap-to-page case, which uses legacy style scrollers for now
     }
     NSRect scrollViewRect = [[window contentView] frame];
-    scrollViewRect.size = [[scrollView class] frameSizeForContentSize:size horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSRegularControlSize scrollerStyle:scrollerStyle];
+    scrollViewRect.size = [[scrollView class] frameSizeForContentSize:size horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:scrollerStyle];
     NSRect newFrame = [window frameRectForContentRect:scrollViewRect];
     newFrame.origin = NSMakePoint(origWindowFrame.origin.x, NSMaxY(origWindowFrame) - newFrame.size.height);
     [window setFrame:newFrame display:YES];
@@ -666,7 +649,7 @@
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             NSInteger windowHeight = [defaults integerForKey:WindowHeight];
             NSInteger windowWidth = [defaults integerForKey:WindowWidth];
-            NSFont *font = [[self document] isRichText] ? [NSFont userFontOfSize:0.0] : [[NSFont userFixedPitchFontOfSize:0.0] screenFontWithRenderingMode:NSFontDefaultRenderingMode];
+            NSFont *font = [[self document] isRichText] ? [NSFont userFontOfSize:0.0] : [NSFont userFixedPitchFontOfSize:0.0];
             NSSize size;
             size.height = ceil([[self layoutManager] defaultLineHeightForFont:font] * windowHeight);
             size.width = [@"x" sizeWithAttributes:[NSDictionary dictionaryWithObject:font forKey:NSFontAttributeName]].width;
@@ -752,7 +735,7 @@
     NSUndoManager *undoManager = [document undoManager];
     [undoManager beginUndoGrouping];
     
-    NSString *undoType = (NSString *)((isRich) ? (([[[self firstTextView] textStorage] containsAttachments] || [[document fileType] isEqualToString:(NSString *)kUTTypeRTFD]) ? kUTTypeRTFD : kUTTypeRTF) : kUTTypePlainText);
+    NSString *undoType = (isRich) ? (([[[self firstTextView] textStorage] containsAttachments] || [[document fileType] isEqualToString:UTTypeRTFD.identifier]) ? UTTypeRTFD.identifier : UTTypeRTF.identifier) : UTTypePlainText.identifier;
     
     [undoManager registerUndoWithTarget:self selector:_cmd object:undoType];
     
@@ -770,7 +753,7 @@
     
     [undoManager endUndoGrouping];
     
-    if (type == nil) type = (NSString *)(isRich ? kUTTypePlainText : kUTTypeRTF);
+    if (type == nil) type = isRich ? UTTypePlainText.identifier : UTTypeRTF.identifier;
     
     if (fileURL) {
         [document saveToURL:fileURL ofType:type forSaveOperation:NSAutosaveInPlaceOperation completionHandler:^(NSError *error) {
@@ -803,23 +786,19 @@
     // Check if there is any loss of information
     if ([document toggleRichWillLoseInformation]) {
         [document performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)(void)) {
-        NSBeginAlertSheet(NSLocalizedString(@"Convert this document to plain text?", @"Title of alert confirming Make Plain Text"),
-			  NSLocalizedString(@"OK", @"OK"), NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."), nil, [[self document] windowForSheet], 
-                              self, NULL, @selector(didEndToggleRichSheet:returnCode:contextInfo:),
-                                Block_copy(^(void) {
-                                    activityCompletionHandler();
-                                }),
-			  NSLocalizedString(@"Making a rich text document plain will lose all text styles (such as fonts and colors), images, attachments, and document properties.", @"Subtitle of alert confirming Make Plain Text"));
+            NSAlert *alert = [[NSAlert alloc] init];
+            [alert setMessageText:NSLocalizedString(@"Convert this document to plain text?", @"Title of alert confirming Make Plain Text")];
+            [alert setInformativeText:NSLocalizedString(@"Making a rich text document plain will lose all text styles (such as fonts and colors), images, attachments, and document properties.", @"Subtitle of alert confirming Make Plain Text")];
+            [alert addButtonWithTitle:NSLocalizedString(@"OK", @"OK")];
+            [alert addButtonWithTitle:NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel.")];
+            [alert beginSheetModalForWindow:[[self document] windowForSheet] completionHandler:^(NSModalResponse returnCode) {
+                if (returnCode == NSAlertFirstButtonReturn) [self autosaveIfNeededThenToggleRich];
+                activityCompletionHandler();
+            }];
         }];
     } else {
         [self autosaveIfNeededThenToggleRich];
     }
-}
-
-- (void)didEndToggleRichSheet:(NSWindow *)sheet returnCode:(NSInteger)returnCode contextInfo:(void (^)(void))block {
-    if (returnCode == NSAlertDefaultReturn) [self autosaveIfNeededThenToggleRich];
-    block();
-    Block_release(block);
 }
 
 /* Layout orientation
@@ -855,7 +834,7 @@
 	
         // Get a frame for the window content, which is a scrollView
         newScrollView.origin = NSZeroPoint;
-        newScrollView.size = [[scrollView class] frameSizeForContentSize:paperSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSRegularControlSize scrollerStyle:NSScrollerStyleLegacy];
+        newScrollView.size = [[scrollView class] frameSizeForContentSize:paperSize horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy];
 	
         // The standard frame for the window is now the frame that will fit the scrollView content
         standardFrame.size = [[window class] frameRectForContentRect:newScrollView styleMask:[window styleMask]].size;
@@ -873,7 +852,7 @@
     
     if (!isSettingSize) {   // There is potential for recursion, but typically this is prevented in NSWindow which doesn't call this method if the frame doesn't change. However, just in case...
 	isSettingSize = YES;
-	NSSize viewSize = [[scrollView class] contentSizeForFrameSize:[scrollView frame].size hasHorizontalScroller:[scrollView hasHorizontalScroller] hasVerticalScroller:[scrollView hasVerticalScroller] borderType:[scrollView borderType]];
+	NSSize viewSize = [[scrollView class] contentSizeForFrameSize:[scrollView frame].size horizontalScrollerClass:[scrollView hasHorizontalScroller] ? [NSScroller class] : Nil verticalScrollerClass:[scrollView hasVerticalScroller] ? [NSScroller class] : Nil borderType:[scrollView borderType] controlSize:NSControlSizeRegular scrollerStyle:[NSScroller preferredScrollerStyle]];
 	
 	if (![[self document] hasMultiplePages]) {
 	    viewSize.width -= (defaultTextPadding() * 2.0);
@@ -903,24 +882,27 @@
 	    NSError *error;
             if (![linkURL checkResourceIsReachableAndReturnError:&error]) {	// To be able to present an error panel, see if the file is reachable
                 [[self document] performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)(void)) {
-                    [[self window] presentError:error modalForWindow:[self window] delegate:self didPresentSelector:@selector(presenterDidPresent:soContinue:) contextInfo:Block_copy(^(BOOL didSucceed) {
+                    NSAlert *alert = [NSAlert alertWithError:error];
+                    [alert beginSheetModalForWindow:[self window] completionHandler:^(NSModalResponse returnCode) {
                         activityCompletionHandler();
-                    })];
+                    }];
                 }];
 		return YES;
 	    } else {
                 // Special case: We want to open text types in TextEdit, as presumably that is what was desired
-                NSString *typeIdentifier = nil;
-                if ([linkURL getResourceValue:&typeIdentifier forKey:NSURLTypeIdentifierKey error:NULL] && typeIdentifier) {
+                UTType *contentType = nil;
+                if ([linkURL getResourceValue:&contentType forKey:NSURLContentTypeKey error:NULL] && contentType) {
+                    NSString *typeIdentifier = contentType.identifier;
                     BOOL openInTextEdit = NO;
                     for (NSString *textTypeIdentifier in [NSAttributedString textTypes]) {
-                        if ([workspace type:typeIdentifier conformsToType:textTypeIdentifier]) {
+                        if ([[UTType typeWithIdentifier:typeIdentifier] conformsToType:[UTType typeWithIdentifier:textTypeIdentifier]]) {
                             openInTextEdit = YES;
                             break;
                         }
                     }
                     if (openInTextEdit) {
-                        if ([[NSDocumentController sharedDocumentController] openDocumentWithContentsOfURL:linkURL display:YES error:NULL]) return YES;                    
+                        [[NSDocumentController sharedDocumentController] openDocumentWithContentsOfURL:linkURL display:YES completionHandler:^(NSDocument *document, BOOL documentWasAlreadyOpen, NSError *error) {}];
+                        return YES;
                     }
                 }
                 // Other file URLs are displayed in Finder
@@ -957,17 +939,16 @@
 - (NSArray *)textView:(NSTextView *)view writablePasteboardTypesForCell:(id <NSTextAttachmentCell>)cell atIndex:(NSUInteger)charIndex {
     NSString *name = [[[cell attachment] fileWrapper] filename];
     NSURL *docURL = [[self document] fileURL];
-    return (docURL && [docURL isFileURL] && name) ? [NSArray arrayWithObject:NSFilenamesPboardType] : nil;
+    return (docURL && [docURL isFileURL] && name) ? [NSArray arrayWithObject:NSPasteboardTypeFileURL] : nil;
 }
 
 - (BOOL)textView:(NSTextView *)view writeCell:(id <NSTextAttachmentCell>)cell atIndex:(NSUInteger)charIndex toPasteboard:(NSPasteboard *)pboard type:(NSString *)type {
     NSString *name = [[[cell attachment] fileWrapper] filename];
     NSURL *docURL = [[self document] fileURL];
-    if ([type isEqualToString:NSFilenamesPboardType] && name && [docURL isFileURL]) {
-	NSString *docPath = [docURL path];
-	NSString *pathToAttachment = [docPath stringByAppendingPathComponent:name];
-        if (pathToAttachment) {
-	    [pboard setPropertyList:[NSArray arrayWithObject:pathToAttachment] forType:NSFilenamesPboardType];
+    if ([type isEqualToString:NSPasteboardTypeFileURL] && name && [docURL isFileURL]) {
+	NSURL *attachmentURL = [docURL URLByAppendingPathComponent:name];
+        if (attachmentURL) {
+	    [pboard writeObjects:@[attachmentURL]];
 	    return YES;
 	}
     }

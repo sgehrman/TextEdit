@@ -6,45 +6,7 @@
  
   Version: 1.8
  
- Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
- Inc. ("Apple") in consideration of your agreement to the following
- terms, and your use, installation, modification or redistribution of
- this Apple software constitutes acceptance of these terms.  If you do
- not agree with these terms, please do not use, install, modify or
- redistribute this Apple software.
- 
- In consideration of your agreement to abide by the following terms, and
- subject to these terms, Apple grants you a personal, non-exclusive
- license, under Apple's copyrights in this original Apple software (the
- "Apple Software"), to use, reproduce, modify and redistribute the Apple
- Software, with or without modifications, in source and/or binary forms;
- provided that if you redistribute the Apple Software in its entirety and
- without modifications, you must retain this notice and the following
- text and disclaimers in all such redistributions of the Apple Software.
- Neither the name, trademarks, service marks or logos of Apple Inc. may
- be used to endorse or promote products derived from the Apple Software
- without specific prior written permission from Apple.  Except as
- expressly stated in this notice, no other rights or licenses, express or
- implied, are granted by Apple herein, including but not limited to any
- patent rights that may be infringed by your derivative works or by other
- works in which the Apple Software may be incorporated.
- 
- The Apple Software is provided by Apple on an "AS IS" basis.  APPLE
- MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
- THE IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS
- FOR A PARTICULAR PURPOSE, REGARDING THE APPLE SOFTWARE OR ITS USE AND
- OPERATION ALONE OR IN COMBINATION WITH YOUR PRODUCTS.
- 
- IN NO EVENT SHALL APPLE BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL
- OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- INTERRUPTION) ARISING IN ANY WAY OUT OF THE USE, REPRODUCTION,
- MODIFICATION AND/OR DISTRIBUTION OF THE APPLE SOFTWARE, HOWEVER CAUSED
- AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
- STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
- 
- Copyright (C) 2013 Apple Inc. All Rights Reserved.
+
  
  */
 
@@ -77,7 +39,6 @@
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    [super dealloc];
 }
 
 /* Do not allow selecting the "Customize" item and the separator before it. (Note that the customize item can be chosen and an action will be sent, but the selection doesn't change to it.)
@@ -107,15 +68,11 @@ static EncodingManager *sharedInstance = nil;
 
 - (id)init {
     if (sharedInstance) {		// We just have one instance of the EncodingManager class, return that one instead
-        [self release];
+        return sharedInstance;
     } else if (self = [super init]) {
         sharedInstance = self;
     }
     return sharedInstance;
-}
-
-- (void)dealloc {
-    if (self != sharedInstance) [super dealloc];	// Don't free the shared instance
 }
 
 
@@ -238,7 +195,7 @@ static int encodingCompare(const void *firstPtr, const void *secondPtr) {
             NSInteger cnt = 0;
             encs = [[NSMutableArray alloc] init];
             while (plainTextFileStringEncodingsSupported[cnt] != -1) {
-                if ((encoding = CFStringConvertEncodingToNSStringEncoding(plainTextFileStringEncodingsSupported[cnt++])) != kCFStringEncodingInvalidId) {
+                if ((encoding = CFStringConvertEncodingToNSStringEncoding((CFStringEncoding)plainTextFileStringEncodingsSupported[cnt++])) != kCFStringEncodingInvalidId) {
                     [encs addObject:[NSNumber numberWithUnsignedInteger:encoding]];
                     if (encoding == defaultEncoding) hasDefault = YES;
                 }
@@ -259,7 +216,7 @@ static int encodingCompare(const void *firstPtr, const void *secondPtr) {
         NSInteger cnt, numEncodings = [encodingMatrix numberOfRows];
         for (cnt = 0; cnt < numEncodings; cnt++) {
             NSCell *cell = [encodingMatrix cellAtRow:cnt column:0];
-            [cell setState:[encodings containsObject:[cell representedObject]] ? NSOnState : NSOffState];
+            [cell setState:[encodings containsObject:[cell representedObject]] ? NSControlStateValueOn : NSControlStateValueOff];
         }
     }
 
@@ -277,7 +234,7 @@ static int encodingCompare(const void *firstPtr, const void *secondPtr) {
 
 - (IBAction)showPanel:(id)sender {
     if (!encodingMatrix) {
-        if (![NSBundle loadNibNamed:@"SelectEncodingsPanel" owner:self])  {
+        if (![[NSBundle mainBundle] loadNibNamed:@"SelectEncodingsPanel" owner:self topLevelObjects:NULL])  {
             NSLog(@"Failed to load SelectEncodingsPanel.nib");
             return;
         }
@@ -295,29 +252,25 @@ static int encodingCompare(const void *firstPtr, const void *secondPtr) {
     for (cnt = 0; cnt < numRows; cnt++) {
         NSCell *cell = [encodingMatrix cellAtRow:cnt column:0];
         NSNumber *encodingNumber = [cell representedObject];
-        if (([encodingNumber unsignedIntegerValue] != NoStringEncoding) && ([cell state] == NSOnState)) [encs addObject:encodingNumber];
+        if (([encodingNumber unsignedIntegerValue] != NoStringEncoding) && ([cell state] == NSControlStateValueOn)) [encs addObject:encodingNumber];
     }
 
-    [encodings autorelease];
     encodings = encs;
 
     [self noteEncodingListChange:YES updateList:NO postNotification:YES];
 }
 
 - (IBAction)clearAll:(id)sender {
-    [encodings autorelease];
-    encodings = [[NSArray array] retain];				// Empty encodings list
+    encodings = [[NSArray array] copy];				// Empty encodings list
     [self noteEncodingListChange:YES updateList:YES postNotification:YES];
 }
 
 - (IBAction)selectAll:(id)sender {
-    [encodings autorelease];
-    encodings = [[[self class] allAvailableStringEncodings] retain];	// All encodings
+    encodings = [[self class] allAvailableStringEncodings];	// All encodings
     [self noteEncodingListChange:YES updateList:YES postNotification:YES];
 }
 
 - (IBAction)revertToDefault:(id)sender {
-    [encodings autorelease];
     encodings = nil;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"Encodings"];
     (void)[self enabledEncodings];					// Regenerate default list
