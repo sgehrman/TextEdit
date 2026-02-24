@@ -2,14 +2,15 @@
 /*
      File: TextEditDefaultsKeys.h
  Abstract: Keys used for preferences.
- 
-  Version: 1.8
- 
 
- 
+  Version: 1.8
+
+
+
  */
 
-// Note that not all keys in this file are exposed in the UI. Some of them are not used at all, but are kept for reference.
+// Note that not all keys in this file are exposed in the UI. Some of them are not used at all, but
+// are kept for reference.
 #define RichText @"RichText"
 #define ShowPageBreaks @"ShowPageBreaks"
 #define AddExtensionToNewPlainTextFiles @"AddExtensionToNewPlainTextFiles"
@@ -48,4 +49,3 @@
 #define AuthorProperty @"author"
 #define CompanyProperty @"company"
 #define CopyrightProperty @"copyright"
-

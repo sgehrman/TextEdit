@@ -2,11 +2,11 @@
 /*
      File: TextEditMisc.h
  Abstract: Miscellaneous helper functions and methods.
- 
-  Version: 1.8
- 
 
- 
+  Version: 1.8
+
+
+
  */
 
 #import <Cocoa/Cocoa.h>
@@ -27,4 +27,3 @@ NSSize documentSizeForPrintInfo(NSPrintInfo *printInfo);
 @interface NSTextView (TextEditAdditions)
 - (void)textEditDoForegroundLayoutToCharacterIndex:(NSUInteger)loc;
 @end
-

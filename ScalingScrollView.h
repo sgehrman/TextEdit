@@ -2,11 +2,11 @@
 /*
      File: ScalingScrollView.h
  Abstract: NSScrollView subclass to support scaling content.
- 
-  Version: 1.8
- 
 
- 
+  Version: 1.8
+
+
+
  */
 
 #import <Cocoa/Cocoa.h>
@@ -23,4 +23,3 @@
 - (IBAction)zoomOut:(id)sender;
 
 @end
-

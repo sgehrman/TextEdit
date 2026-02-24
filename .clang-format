@@ -1,0 +1,12 @@
+---
+# Start by basing your config on a standard style.
+# The 'LLVM' style is the most common fallback/default.
+BasedOnStyle: LLVM
+
+IndentWidth:     2
+ColumnLimit:     100
+TabWidth:        4
+
+InsertBraces: true
+...
+

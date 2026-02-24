@@ -1,0 +1,6 @@
+custom_rules:
+  symbol_availability:
+    regex: 'imageWithSystemSymbolName:@?"([^"]+)"'
+    message: "Check availability of symbol '$1' for macOS 12+"
+    severity: warning
+
