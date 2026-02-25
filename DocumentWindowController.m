@@ -23,7 +23,6 @@
 @property(nonatomic, assign) BOOL hasMultiplePages;
 @property(nonatomic, assign) BOOL rulerIsBeingDisplayed;
 @property(nonatomic, assign) BOOL isSettingSize;
-@property(nonatomic, assign) BOOL pageUpdateDeferred;
 @property(nonatomic, assign) NSInteger addingPageCount;
 @end
 
@@ -74,6 +73,8 @@
   if ([self document]) {
     [self setDocument:nil];
   }
+
+  [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_syncPages) object:nil];
 
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 
@@ -703,16 +704,29 @@
     return;
   }
 
-  _hasMultiplePages = pages;
-
   // Keep the old first text view alive for the duration of this method.
   // The if/else blocks below replace the document view and remove old text
-  // containers, which releases the old text view.  But makeFirstResponder:
-  // for the new text view doesn't happen until the end of the method.  If
-  // the old text view is freed before then, the window holds a dangling
-  // first responder pointer that crashes in becomeKeyWindow → acquireKeyFocus
-  // (e.g., when the menu returns key status to the window).
+  // containers, which releases the old text view.
   NSTextView *oldFirstTextView = [self firstTextView];
+
+  // Resign the current first responder while it's still alive and in the
+  // view hierarchy.  In multi-page mode the first responder may be ANY
+  // page's text view — not necessarily oldFirstTextView.  The if/else
+  // blocks below replace the scroll view's document view, releasing old
+  // text views.  makeFirstResponder: for the new text view doesn't happen
+  // until the end of the method.  Without clearing now, the window holds
+  // a dangling first responder that crashes in becomeKeyWindow →
+  // acquireKeyFocus → objc_storeWeak.
+  //
+  // IMPORTANT: Do this BEFORE setting _hasMultiplePages.  resignFirstResponder
+  // can trigger layout (e.g., committing IME input), which fires the layout
+  // delegate.  If _hasMultiplePages were already the new value, the delegate
+  // would try to add/remove pages with the wrong view hierarchy in place
+  // (e.g., calling addPage when the document view is still a plain NSTextView).
+  NSWindow *window = [_scrollView window];
+  if (window) {
+    [window makeFirstResponder:nil];
+  }
 
   [oldFirstTextView removeObserver:self forKeyPath:@"backgroundColor"];
   [oldFirstTextView unbind:@"editable"];
@@ -730,6 +744,13 @@
     }
   }
 
+  // Set the flag AFTER all cleanup that might trigger layout callbacks.
+  // The layout delegate checks _hasMultiplePages and calls addPage/removePage,
+  // which assume the document view matches the flag.  Setting the flag while
+  // the old view hierarchy is still in place would cause those calls to
+  // operate on the wrong document view.
+  _hasMultiplePages = pages;
+
   if (_hasMultiplePages) {
     MultiplePageView *pagesView = [[MultiplePageView alloc] init];
 
@@ -738,11 +759,39 @@
     [pagesView setPrintInfo:[[self document] printInfo]];
     [pagesView setLayoutOrientation:orientation];
 
-    // Add the first new page before we remove the old container so we can avoid
-    // losing all the shared text view state.
-    [self addPage];
     if (oldFirstTextView) {
-      [[self layoutManager] removeTextContainerAtIndex:0];
+      // Keep the existing text view (preserving NSTextViewSharedData) but
+      // replace its container with a fresh one sized for the page.  Reusing
+      // the old container causes the layout manager to retain stale layout
+      // state from single-page mode; even explicit invalidation doesn't
+      // fully clear it on subsequent round trips, so the page cascade fails.
+      // replaceTextContainer: swaps the container in the layout manager
+      // atomically — the text view is never disconnected, so _fixSharedData
+      // always finds a valid owner and no crash occurs.
+      NSSize textSize = [pagesView documentSizeInPage];
+      if (NSTextLayoutOrientationVertical == orientation) {
+        textSize = NSMakeSize(textSize.height, textSize.width);
+      }
+
+      NSTextContainer *freshContainer = [[NSTextContainer alloc] initWithContainerSize:textSize];
+      [freshContainer setWidthTracksTextView:YES];
+      [freshContainer setHeightTracksTextView:YES];
+
+      [pagesView setNumberOfPages:1];
+      [pagesView addSubview:oldFirstTextView];
+
+      [oldFirstTextView setHorizontallyResizable:NO];
+      [oldFirstTextView setVerticallyResizable:NO];
+      [oldFirstTextView setAutoresizingMask:NSViewNotSizable];
+      [oldFirstTextView setFrame:[pagesView documentRectForPageNumber:0]];
+      [oldFirstTextView setLayoutOrientation:orientation];
+
+      [oldFirstTextView replaceTextContainer:freshContainer];
+
+      [self configureTypingAttributesAndDefaultParagraphStyleForTextView:oldFirstTextView];
+    } else {
+      // First time setup (no existing text view) — create the first page.
+      [self addPage];
     }
 
     if (NSTextLayoutOrientationVertical == orientation) {
@@ -773,53 +822,51 @@
     }
   } else {
     NSSize size = [_scrollView contentSize];
-    NSTextContainer *textContainer =
-        [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
-
-    // Insert the container into the layout manager BEFORE creating the text
-    // view, so initWithFrame:textContainer: properly connects to the text
-    // system and inherits NSTextViewSharedData from sibling text views.
-    [[self layoutManager] insertTextContainer:textContainer atIndex:0];
-
-    // Create the text view while the old page containers are still in the
-    // layout manager.  This way initWithFrame:textContainer: finds siblings
-    // and inherits their NSTextViewSharedData.  If we removed old containers
-    // first, _fixSharedData during removal would update shared data to
-    // reference old text views that are about to be freed, corrupting the
-    // shared state for subsequent text views.
-    NSTextView *textView =
-        [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height)
-                            textContainer:textContainer];
+    NSTextView *textView;
+    NSTextContainer *textContainer;
 
     if ([[_scrollView documentView] isKindOfClass:[MultiplePageView class]]) {
-      NSArray *textContainers = [[self layoutManager] textContainers];
-      NSUInteger cnt = [textContainers count];
-      while (cnt-- > 1) {
-        [[self layoutManager] removeTextContainerAtIndex:cnt];
+      // Transitioning from multi-page: remove extra containers from the end.
+      // Container 0's text view stays alive throughout, so _fixSharedData finds
+      // a valid owner and doesn't corrupt NSTextViewSharedData.
+      NSArray *containers = [[self layoutManager] textContainers];
+      for (NSUInteger i = [containers count]; i > 1; i--) {
+        NSTextView *pageView = [[containers objectAtIndex:i - 1] textView];
+        [pageView removeFromSuperview];
+        [[self layoutManager] removeTextContainerAtIndex:i - 1];
       }
+
+      // Keep the text view but replace its container with a fresh one.
+      // This avoids stale layout state from multi-page mode.
+      textView = [self firstTextView];
+      textContainer =
+          [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
+      [textContainer setWidthTracksTextView:YES];
+      [textContainer setHeightTracksTextView:NO];
+      [textView replaceTextContainer:textContainer];
+    } else {
+      // Initial setup (no existing text view) — create a new container and
+      // text view.
+      textContainer =
+          [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
+      [[self layoutManager] addTextContainer:textContainer];
+      textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, size.width, size.height)
+                                     textContainer:textContainer];
     }
 
-    [textContainer setWidthTracksTextView:YES];
-    [textContainer setHeightTracksTextView:NO]; /* Not really necessary */
-    [textView setHorizontallyResizable:NO];     /* Not really necessary */
+    [textView setHorizontallyResizable:NO];
     [textView setVerticallyResizable:YES];
     [textView setAutoresizingMask:NSViewWidthSizable];
-    [textView setMinSize:size]; /* Not really necessary; will be adjusted by the
-                                   autoresizing... */
-    [textView setMaxSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)]; /* Will be adjusted by the
-                                                                   autoresizing... */
+    [textView setFrame:NSMakeRect(0.0, 0.0, size.width, size.height)];
+    [textView setMinSize:size];
+    [textView setMaxSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)];
     [self configureTypingAttributesAndDefaultParagraphStyleForTextView:textView];
+    [textView setLayoutOrientation:orientation];
 
-    [textView setLayoutOrientation:orientation]; // this configures the above settings
-
-    /* The next line should cause the multiple page view and everything else to
-     * go away */
     [_scrollView setDocumentView:textView];
 
     [_scrollView setHasVerticalScroller:YES];
     [_scrollView setHasHorizontalScroller:YES];
-
-    // Show the selected region
     [[self firstTextView] scrollRangeToVisible:[[self firstTextView] selectedRange]];
   }
 
@@ -827,23 +874,16 @@
       setHasHorizontalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? YES : NO)];
   [_scrollView setHasVerticalRuler:((orientation == NSTextLayoutOrientationHorizontal) ? NO : YES)];
 
-  // Re-establish shared state on the new first text view.  The text view
-  // inherits NSTextViewSharedData from its siblings during addPage, but some
-  // properties (binding, observer, inspector bar) must be set up here after
-  // the transition completes.  The other setters are belt-and-suspenders to
-  // ensure the delegate, font panel, undo, and rich-text state are correct.
+  // Re-establish per-view state on the first text view.  Because we repurpose
+  // the existing text view (never destroy the "owner" in NSTextViewSharedData),
+  // shared properties like delegate, usesFontPanel, allowsUndo, richText, etc.
+  // are already intact.  We only need to set up the background color, observer,
+  // binding, first responder, ruler visibility, and inspector bar.
   NSTextView *newFirstTextView = [self firstTextView];
   BOOL rich = [[self document] isRichText];
-  [newFirstTextView setDelegate:self];
-  [newFirstTextView setUsesFontPanel:YES];
-  [newFirstTextView setUsesFindBar:YES];
-  [newFirstTextView setIncrementalSearchingEnabled:YES];
-  [newFirstTextView setAllowsUndo:YES];
-  [newFirstTextView setAllowsDocumentBackgroundColorChange:YES];
+
   [newFirstTextView setBackgroundColor:[[self document] backgroundColor]];
-  [newFirstTextView setRichText:rich];
-  [newFirstTextView setUsesRuler:rich];
-  [newFirstTextView setImportsGraphics:rich];
+
   if (rich && ![[self document] isReadOnly]) {
     if ([[NSUserDefaults standardUserDefaults] boolForKey:ShowRuler]) {
       [newFirstTextView setRulerVisible:YES];
@@ -866,6 +906,20 @@
   // inspector bar (formatting toolbar) properly attaches to the window for the
   // new text view.
   [newFirstTextView setUsesInspectorBar:rich];
+
+  // If entering multi-page mode, force the page cascade to complete now.
+  // Invalidate all layout first: the container was resized from CGFLOAT_MAX
+  // to page height, but the layout manager may not have fully invalidated
+  // (e.g., if tracking modes interfered with setContainerSize:, or if
+  // layout callbacks were deferred during a display cycle).
+  if (_hasMultiplePages) {
+    NSLayoutManager *lm = [self layoutManager];
+    NSUInteger len = [[lm textStorage] length];
+    if (len > 0) {
+      [lm invalidateLayoutForCharacterRange:NSMakeRange(0, len) actualCharacterRange:NULL];
+    }
+    [self _syncPages];
+  }
 }
 
 /* We override these pair of methods so we can stash away the scrollerStyle,
@@ -1389,17 +1443,18 @@
 - (void)layoutManager:(NSLayoutManager *)layoutManager
     didCompleteLayoutForTextContainer:(NSTextContainer *)textContainer
                                 atEnd:(BOOL)layoutFinishedFlag {
-  if (!_hasMultiplePages) return;
+  if (!_hasMultiplePages) {
+    return;
+  }
 
   // If called during a view display cycle, defer page changes.
+  // performSelector:afterDelay:0 is self-coalescing with
+  // cancelPreviousPerformRequests, so no flag is needed.
   if ([NSGraphicsContext currentContext]) {
-    if (!_pageUpdateDeferred) {
-      _pageUpdateDeferred = YES;
-      dispatch_async(dispatch_get_main_queue(), ^{
-        self->_pageUpdateDeferred = NO;
-        [self _syncPages];
-      });
-    }
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(_syncPages)
+                                               object:nil];
+    [self performSelector:@selector(_syncPages) withObject:nil afterDelay:0];
     return;
   }
 
@@ -1410,10 +1465,14 @@
 
 /* Deferred page sync — called after a display cycle that needed page changes. */
 - (void)_syncPages {
-  if (!_hasMultiplePages) return;
+  if (!_hasMultiplePages) {
+    return;
+  }
   NSLayoutManager *lm = [self layoutManager];
   NSArray *containers = [lm textContainers];
-  if ([containers count] == 0) return;
+  if ([containers count] == 0) {
+    return;
+  }
 
   // Force layout completion.  Each ensureLayoutForTextContainer: may add one
   // page (via the delegate cascade), so keep going until no new pages appear.
@@ -1480,7 +1539,9 @@
     // container still holds all the text).  Removing the new container here
     // would destroy the page that addPage is setting up.  Excess pages will
     // be cleaned up by subsequent layout passes or _syncPages.
-    if (_addingPageCount > 0) return;
+    if (_addingPageCount > 0) {
+      return;
+    }
 
     NSUInteger lastUsedContainerIndex = [containers indexOfObjectIdenticalTo:textContainer];
     NSUInteger numContainers = [containers count];
@@ -1496,7 +1557,9 @@
       removedTextViews = [NSMutableArray array];
       for (NSUInteger i = lastUsedContainerIndex + 1; i < numContainers; i++) {
         NSTextView *tv = [[containers objectAtIndex:i] textView];
-        if (tv) [removedTextViews addObject:tv];
+        if (tv) {
+          [removedTextViews addObject:tv];
+        }
       }
     }
 
