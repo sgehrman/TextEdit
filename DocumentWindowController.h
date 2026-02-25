@@ -15,7 +15,6 @@
 @interface DocumentWindowController
     : NSWindowController <NSLayoutManagerDelegate, NSTextViewDelegate>
 
-// Convenience initializer. Loads the correct nib automatically.
 - (id)init;
 
 - (NSUInteger)numberOfPages;

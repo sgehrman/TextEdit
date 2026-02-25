@@ -17,8 +17,8 @@
 #import "TextEditMisc.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@interface DocumentWindowController ()
-@property(nonatomic, strong) IBOutlet ScalingScrollView *scrollView;
+@interface DocumentWindowController () <NSWindowDelegate>
+@property(nonatomic, strong) ScalingScrollView *scrollView;
 @property(nonatomic, strong) NSLayoutManager *layoutMgr;
 @property(nonatomic, assign) BOOL hasMultiplePages;
 @property(nonatomic, assign) BOOL rulerIsBeingDisplayed;
@@ -67,6 +67,43 @@
     [_layoutMgr setAllowsNonContiguousLayout:YES];
   }
   return self;
+}
+
+- (void)loadWindow {
+  // Window: titled, closable, miniaturizable, resizable. Not visible at launch.
+  NSWindow *window =
+      [[NSWindow alloc] initWithContentRect:NSMakeRect(241, 745, 494, 357)
+                                  styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                             NSWindowStyleMaskMiniaturizable |
+                                             NSWindowStyleMaskResizable)
+                                    backing:NSBackingStoreBuffered
+                                      defer:YES];
+  [window setMinSize:NSMakeSize(100, 14)];
+  [window setDelegate:self];
+  [window setReleasedWhenClosed:NO];
+  [window setTabbingMode:NSWindowTabbingModeAutomatic];
+
+  // ScalingScrollView: fills content view, no border, autoresizing W+H.
+  ScalingScrollView *scrollView =
+      [[ScalingScrollView alloc] initWithFrame:[[window contentView] bounds]];
+  [scrollView setBorderType:NSNoBorder];
+  [scrollView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+  [scrollView setHasVerticalScroller:YES];
+  [scrollView setHasHorizontalScroller:YES];
+  [[scrollView horizontalScroller] setHidden:YES];
+  [scrollView setLineScroll:10];
+  [scrollView setPageScroll:10];
+  [scrollView setUsesPredominantAxisScrolling:NO];
+
+  // Magnification properties (replaces ScalingScrollView's awakeFromNib).
+  [scrollView setAllowsMagnification:YES];
+  [scrollView setMaxMagnification:16.0];
+  [scrollView setMinMagnification:0.25];
+
+  [[window contentView] addSubview:scrollView];
+  _scrollView = scrollView;
+
+  [self setWindow:window];
 }
 
 - (void)dealloc {
