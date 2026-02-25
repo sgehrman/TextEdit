@@ -61,7 +61,7 @@
 @implementation DocumentWindowController
 
 - (id)init {
-  if (self = [super initWithWindowNibName:@"DocumentWindow"]) {
+  if (self = [super initWithWindowNibName:@""]) {
     _layoutMgr = [[NSLayoutManager alloc] init];
     [_layoutMgr setDelegate:self];
     [_layoutMgr setAllowsNonContiguousLayout:YES];
@@ -71,13 +71,12 @@
 
 - (void)loadWindow {
   // Window: titled, closable, miniaturizable, resizable. Not visible at launch.
-  NSWindow *window =
-      [[NSWindow alloc] initWithContentRect:NSMakeRect(241, 745, 494, 357)
-                                  styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                                             NSWindowStyleMaskMiniaturizable |
-                                             NSWindowStyleMaskResizable)
-                                    backing:NSBackingStoreBuffered
-                                      defer:YES];
+  NSWindow *window = [[NSWindow alloc]
+      initWithContentRect:NSMakeRect(241, 745, 494, 357)
+                styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                           NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+                  backing:NSBackingStoreBuffered
+                    defer:YES];
   [window setMinSize:NSMakeSize(100, 14)];
   [window setDelegate:self];
   [window setReleasedWhenClosed:NO];
