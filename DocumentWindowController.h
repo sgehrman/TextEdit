@@ -9,7 +9,6 @@
 
  */
 
-#import "ScalingScrollView.h"
 #import <Cocoa/Cocoa.h>
 
 @interface DocumentWindowController
