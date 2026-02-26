@@ -789,6 +789,11 @@
     NSTextView *textView;
     NSTextContainer *textContainer;
 
+    textContainer =
+        [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
+    [textContainer setWidthTracksTextView:YES];
+    [textContainer setHeightTracksTextView:NO];
+
     if ([[_scrollView documentView] isKindOfClass:[MultiplePageView class]]) {
       // Transitioning from multi-page: remove extra containers from the end.
       NSArray *containers = [[self layoutManager] textContainers];
@@ -797,17 +802,10 @@
         [pageView removeFromSuperview];
         [[self layoutManager] removeTextContainerAtIndex:i - 1];
       }
-
       textView = [self firstTextView];
-      textContainer =
-          [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
-      [textContainer setWidthTracksTextView:YES];
-      [textContainer setHeightTracksTextView:NO];
       [textView replaceTextContainer:textContainer];
     } else {
       // Initial setup — create a new container and text view.
-      textContainer =
-          [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(size.width, CGFLOAT_MAX)];
       [[self layoutManager] addTextContainer:textContainer];
       textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)
                                      textContainer:textContainer];
@@ -817,7 +815,7 @@
     [textView setVerticallyResizable:YES];
     [textView setAutoresizingMask:NSViewWidthSizable];
     [textView setFrame:NSMakeRect(0, 0, size.width, size.height)];
-    [textView setMinSize:size];
+    [textView setMinSize:NSMakeSize(0, size.height)];
     [textView setMaxSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)];
     [self configureTypingAttributesAndDefaultParagraphStyleForTextView:textView];
     [textView setLayoutOrientation:orientation];
